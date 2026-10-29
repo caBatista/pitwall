@@ -68,6 +68,8 @@ class IRacingSource:
                     raw[key] = ir[key]
                 except Exception:  # noqa: BLE001
                     raw[key] = None
+            # not a telemetry var: it lives in the shared-memory header
+            raw["SessionInfoUpdate"] = ir._header.session_info_update
         finally:
             ir.unfreeze_var_buffer_latest()
         return raw

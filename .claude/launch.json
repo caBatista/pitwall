@@ -4,13 +4,13 @@
     {
       "name": "pitwall",
       "runtimeExecutable": ".venv/Scripts/python.exe",
-      "runtimeArgs": ["-m", "pitwall"],
+      "runtimeArgs": ["-u", "-m", "pitwall"],
       "port": 8765
     },
     {
       "name": "pitwall-mock",
       "runtimeExecutable": ".venv/Scripts/python.exe",
-      "runtimeArgs": ["-m", "pitwall", "--mock"],
+      "runtimeArgs": ["-u", "-m", "pitwall", "--mock"],
       "port": 8765
     }
   ]
