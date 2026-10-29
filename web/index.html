@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#06080b">
+<title>Pitwall</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand"><span class="logo"></span><b>PITWALL</b></div>
+    <div class="trk">
+      <div class="trk-name" id="trk-name">Waiting for iRacing…</div>
+      <div class="trk-sub" id="trk-sub"></div>
+    </div>
+    <div class="sess">
+      <span class="pill" id="sess-type">—</span>
+      <span class="flag none" id="flag">—</span>
+    </div>
+    <div class="clock">
+      <div class="clock-main" id="clock-main">--:--:--</div>
+      <div class="clock-sub" id="clock-sub"></div>
+    </div>
+    <div class="spacer"></div>
+    <div class="mini" id="mini"></div>
+    <div class="tools">
+      <button class="seg-btn" id="units-btn" title="Units">METRIC</button>
+      <span class="conn" id="conn" title="Connection"><i></i><em>offline</em></span>
+    </div>
+  </header>
+  <main class="board" id="board"></main>
+  <div class="overlay" id="overlay">
+    <div class="ov-card">
+      <div class="ov-ring"></div>
+      <h2 id="ov-title">Waiting for iRacing</h2>
+      <p id="ov-text">Start iRacing and load into a session. The dashboard connects on its own.</p>
+    </div>
+  </div>
+</div>
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>
