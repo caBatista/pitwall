@@ -1,4 +1,4 @@
-import { esc, prefs, savePrefs, lapTime, flagHtml, makeHtml } from './util.js';
+import { esc, prefs, savePrefs, flagHtml, makeHtml } from './util.js';
 
 // status chip after the name (and after OUT): the most serious flag wins
 const ST = {
@@ -9,7 +9,11 @@ const ST = {
   pit: '<span class="st pit">PIT</span>',
 };
 const stHtml = (c) => ST[c.fl] || (c.pit ? ST.pit : '');
-const FAST = '<i class="fast" title="Fastest lap in class"></i>';
+// lap time with one decimal: 211.827 -> 3:31.8
+const lap1 = (x) => {
+  const t = Math.round(x * 10) / 10, m = Math.floor(t / 60);
+  return `${m}:${(t - m * 60).toFixed(1).padStart(4, '0')}`;
+};
 const OUT = '<span class="tag out">OUT</span>';
 
 /**
@@ -57,7 +61,7 @@ export const relative = {
       const cls = S.classMap.get(d.cls) || { color: '#8b95a7' };
       const [lic, sr] = (d.lic || '').split(' ');
       // best lap (like RaceLab): the last one is -1 whenever iRacing invalidated it
-      const best = c.best ? `<span class="t ${c.cb ? 'cb' : ''}">${lapTime(c.best)}</span>${c.cb ? FAST : ''}` : '<span class="t dim">-:--.---</span>';
+      const best = c.best ? `<span class="t ${c.cb ? 'cb' : ''}">${lap1(c.best)}</span>` : '<span class="t dim">-:--.-</span>';
       return `<div class="rpos">${c.cp || '–'}</div>
         <div class="rcar" style="--cc:${cls.color}"><span class="rn">${esc(d.num)}</span><span class="mk">${makeHtml(d.make)}</span></div>
         ${flagHtml(d.country)}

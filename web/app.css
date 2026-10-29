@@ -185,7 +185,7 @@ body.transparent .card { background: rgba(17, 17, 18, .82); backdrop-filter: blu
 .rel-body { margin: 0 8px 10px; border-radius: 6px; overflow: hidden; }  /* rounded as a block, rows are square */
 /* pos | [class # make] | flag | name [OUT][status] | SR | iRating | best lap | relative */
 .rrow {
-  display: grid; grid-template-columns: 34px 86px 22px minmax(90px, 1fr) 56px 42px 82px 58px; align-items: center; column-gap: 8px;
+  display: grid; grid-template-columns: 34px 86px 22px minmax(90px, 1fr) 56px 42px 60px 58px; align-items: center; column-gap: 8px;
   height: 34px; padding: 0 8px 0 0; position: relative; overflow: hidden;
 }
 .rrow:hover { background: rgba(255, 255, 255, .035); }
@@ -218,18 +218,14 @@ body.transparent .card { background: rgba(17, 17, 18, .82); backdrop-filter: blu
   font: 600 9.5px/1 var(--mono); letter-spacing: .06em; color: var(--ink);
   box-shadow: 0 0 7px 1px color-mix(in srgb, var(--accent) 70%, transparent);
 }
-.st.pit { background: var(--accent); }
+.st.pit { background: var(--accent); box-shadow: none; }  /* already amber: no glow */
 .st.dq { background: var(--red); color: var(--txt); }
 .st.black, .st.repair, .st.warn { background: #000; }
 .st i { display: block; width: 13px; height: 9px; border-radius: 1px; }
 .st.black i { background: #000; box-shadow: 0 0 0 1.5px var(--txt); }
 .st.repair i { width: 10px; height: 10px; border-radius: 50%; background: #ff8a1f; }
 .st.warn i { background: linear-gradient(135deg, var(--txt) 50%, #000 50%); box-shadow: 0 0 0 1px var(--txt); }
-.rlast { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
-.rlast .fast {   /* class fastest lap: a small purple stopwatch right of the time */
-  position: relative; flex-shrink: 0; width: 11px; height: 11px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--purple);
-}
-.rlast .fast::after { content: ""; position: absolute; left: 4.75px; top: 2px; width: 1.5px; height: 4px; background: var(--purple); }
+.rlast { text-align: right; }
 .rrow .rlast .t { font: 600 12.5px var(--num); font-variant-numeric: tabular-nums; }
 .make-i {
   display: block; width: 16px; height: 16px; background: var(--txt); opacity: .85;

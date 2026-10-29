@@ -243,10 +243,8 @@ class Engine:
         ordered = sorted(classes.values(), key=lambda c: c["est"])
         self.classes = {c["id"]: c for c in ordered}
         self.class_order = [c["id"] for c in ordered]
-        if len(self.classes) == 1:  # single class: iRacing reports white, use a nicer accent
-            only = next(iter(self.classes.values()))
-            if only["color"].lower() in ("#ffffff", "#8b95a7"):
-                only["color"] = "#7cf0c9"
+        if len(self.classes) == 1:  # single class: the colour carries no information, use the dash amber
+            next(iter(self.classes.values()))["color"] = "#f4b400"
         if key != self._session_key:
             self._session_key = key
             self.mapper.set_track(key)
