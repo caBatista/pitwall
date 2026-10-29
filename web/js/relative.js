@@ -1,6 +1,15 @@
 import { esc, prefs, savePrefs, lapTime, flagHtml, makeHtml } from './util.js';
 
-const PIT = '<span class="tag">PIT</span>';
+// status chip after the name (and after OUT): the most serious flag wins
+const ST = {
+  dq: '<span class="st dq">DQ</span>',
+  black: '<span class="st black" title="Black flag"><i></i></span>',
+  repair: '<span class="st repair" title="Meatball (repair)"><i></i></span>',
+  warn: '<span class="st warn" title="Warning"><i></i></span>',
+  pit: '<span class="st pit">PIT</span>',
+};
+const stHtml = (c) => ST[c.fl] || (c.pit ? ST.pit : '');
+const FAST = '<i class="fast" title="Fastest lap in class"></i>';
 const OUT = '<span class="tag out">OUT</span>';
 
 /**
@@ -23,7 +32,6 @@ export const relative = {
       <div class="rel-body" id="rl-body"></div>`;
     this.body = root.querySelector('#rl-body');
     this.rows = root.querySelector('#rl-rows');
-    this.hist = new Map();
     this.last = '';
     root.addEventListener('click', (e) => {
       const b = e.target.closest('[data-n]');
@@ -39,28 +47,17 @@ export const relative = {
     const n = prefs.relRows;
     this.rows.querySelectorAll('button').forEach((b) => b.classList.toggle('on', Number(b.dataset.n) === n));
 
-    const now = st.t;
     const cars = new Map(st.cars.map((c) => [c.i, c]));
     const ahead = st.rel.filter((r) => r.dt >= 0).slice(-n);   // nearest n ahead (list is far→near)
     const behind = st.rel.filter((r) => r.dt < 0).slice(0, n);
 
-    // closing rate over ~1.5 s, per car
-    const rate = (r) => {
-      let h = this.hist.get(r.i);
-      if (!h) { h = []; this.hist.set(r.i, h); }
-      h.push([now, Math.abs(r.dt)]);
-      while (h.length > 2 && now - h[0][0] > 1.6) h.shift();
-      const [t0, v0] = h[0];
-      return now - t0 > 0.8 ? (Math.abs(r.dt) - v0) / (now - t0) : 0;
-    };
-
-    // pos | # | make | flag | name | SR | iRating | best lap | relative
+    // pos | # | make | flag | name [OUT][status] | SR | iRating | best lap | relative
     const cells = (i, d, extra) => {
       const c = cars.get(i) || {};
       const cls = S.classMap.get(d.cls) || { color: '#8b95a7' };
       const [lic, sr] = (d.lic || '').split(' ');
       // best lap (like RaceLab): the last one is -1 whenever iRacing invalidated it
-      const best = c.best ? `<span class="t ${c.cb ? 'cb' : ''}">${lapTime(c.best)}</span>` : '<span class="t dim">–</span>';
+      const best = c.best ? `<span class="t ${c.cb ? 'cb' : ''}">${lapTime(c.best)}</span>${c.cb ? FAST : ''}` : '<span class="t dim">-:--.---</span>';
       return `<div class="rpos">${c.cp || '–'}</div>
         <div class="rcar" style="--cc:${cls.color}"><span class="rn">${esc(d.num)}</span><span class="mk">${makeHtml(d.make)}</span></div>
         ${flagHtml(d.country)}
@@ -74,26 +71,22 @@ export const relative = {
       if (!r) return '<div class="rrow empty"></div>';
       const d = S.drivers[r.i];
       if (!d) return '<div class="rrow empty"></div>';
-      const rt = rate(r);
-      let arrow = '';
-      if (rt < -0.12) arrow = side === 'behind' ? '<span class="cl" style="color:var(--red)">▲</span>' : '<span class="cl" style="color:var(--green)">▲</span>';
-      else if (rt > 0.12) arrow = '<span class="cl" style="color:var(--mute)">▼</span>';
       const lap = r.dl > 0 ? `<span class="lapt up">+${r.dl}L</span>` : r.dl < 0 ? `<span class="lapt down">${r.dl}L</span>` : '';
-      const tag = r.pit ? PIT : r.out ? OUT : lap;
       const t = Math.abs(r.dt);
-      const txt = (r.dt >= 0 ? '-' : '+') + t.toFixed(1);
+      // no sign: the row order already says ahead/behind; 92.0 -> 1:32.0
+      const tr = Math.round(t * 10) / 10;   // round first so 119.97 is 2:00.0, not 1:60.0
+      const txt = tr >= 60 ? `${Math.floor(tr / 60)}:${(tr % 60).toFixed(1).padStart(4, '0')}` : tr.toFixed(1);
       return `<div class="rrow ${r.dl > 0 ? 'up' : r.dl < 0 ? 'down' : ''} ${r.pit ? 'pitrow' : ''} ${S.sel === r.i ? 'sel' : ''}" data-i="${r.i}">
-        ${cells(r.i, d, tag)}<div class="rt ${side}">${arrow}${txt}</div></div>`;
+        ${cells(r.i, d, (r.out ? OUT : lap) + stHtml(cars.get(r.i) || r))}<div class="rt ${side}">${txt}</div></div>`;
     };
 
     const md = S.drivers[st.me.i];
-    const meRow = md ? `<div class="rrow me">${cells(st.me.i, md, st.me.pit ? PIT : cars.get(st.me.i)?.out ? OUT : '')}<div class="rt">–</div></div>` : '<div class="rrow empty"></div>';
+    const meRow = md ? `<div class="rrow me">${cells(st.me.i, md, (cars.get(st.me.i)?.out ? OUT : '') + stHtml(cars.get(st.me.i) || {}))}<div class="rt">–</div></div>` : '<div class="rrow empty"></div>';
 
     // ahead is ordered far → near already; pad on top so the layout never jumps
     const a = [...Array(Math.max(0, n - ahead.length)).fill(null), ...ahead];
     const b = [...behind, ...Array(Math.max(0, n - behind.length)).fill(null)];
     const html = a.map((r) => row(r, 'ahead')).join('') + meRow + b.map((r) => row(r, 'behind')).join('');
     if (html !== this.last) { this.body.innerHTML = html; this.last = html; }
-    if (this.hist.size > 80) this.hist.clear();
   },
 };

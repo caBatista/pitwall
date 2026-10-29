@@ -31,7 +31,7 @@ SCALARS = [
 CAR_ARRAYS = [
     "CarIdxLapCompleted", "CarIdxLapDistPct", "CarIdxTrackSurface",
     "CarIdxOnPitRoad", "CarIdxPosition", "CarIdxClassPosition",
-    "CarIdxLastLapTime", "CarIdxBestLapTime", "CarIdxEstTime",
+    "CarIdxLastLapTime", "CarIdxBestLapTime", "CarIdxEstTime", "CarIdxSessionFlags",
 ]
 
 

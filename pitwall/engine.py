@@ -18,6 +18,15 @@ BINS = 360
 SESSION_STATE = {0: "Invalid", 1: "Get in car", 2: "Warm-up", 3: "Parade laps", 4: "Racing", 5: "Checkered", 6: "Cool down"}
 UNLIMITED_TIME = 86400.0
 UNLIMITED_LAPS = 32000
+# per-car flags from CarIdxSessionFlags, most serious first
+CAR_FLAGS = [(0x20000, "dq"), (0x10000, "black"), (0x100000, "repair"), (0x80000, "warn")]
+
+
+def car_flag(bits):
+    bits = int(bits or 0)
+    return next((name for bit, name in CAR_FLAGS if bits & bit), None)
+
+
 WETNESS = ["Unknown", "Dry", "Mostly dry", "Very lightly wet", "Lightly wet", "Moderately wet", "Very wet", "Extremely wet"]
 
 
@@ -282,6 +291,7 @@ class Engine:
         last = arr("CarIdxLastLapTime", [-1.0] * 64)
         best = arr("CarIdxBestLapTime", [-1.0] * 64)
         est = arr("CarIdxEstTime", None)
+        cflags = arr("CarIdxSessionFlags", blank)
 
         snum = raw.get("SessionNum")
         sess = self.sessions.get(snum) or {}
@@ -390,7 +400,7 @@ class Engine:
                 "i": i, "p": overall[i], "cp": cpos[i], "lap": lapc[i], "pct": round(pct[i], 5),
                 "last": round(last[i], 3) if last[i] > 0 else None,
                 "best": round(best[i], 3) if best[i] > 0 else None,
-                "pit": bool(pitr[i]), "out": i in self._out, "srf": surf[i],
+                "pit": bool(pitr[i]), "out": i in self._out, "fl": car_flag(cflags[i]), "srf": surf[i],
                 "cb": bool(best[i] > 0 and class_best.get(cid) == best[i]),
                 "pb": bool(best[i] > 0 and last[i] > 0 and abs(last[i] - best[i]) < 1e-4),
             }
@@ -426,7 +436,7 @@ class Engine:
                 dtm = timed_gap(i, me) if dp >= 0 else -timed_gap(me, i)
                 # lap difference only means something in a race (in practice everyone is "laps ahead")
                 laps = int(round(tot[i] - tot[me] - dp)) if is_race else 0
-                rel.append({"i": i, "dt": round(dtm, 2), "dl": laps, "pit": bool(pitr[i]), "out": i in self._out, "srf": surf[i]})
+                rel.append({"i": i, "dt": round(dtm, 2), "dl": laps, "pit": bool(pitr[i]), "out": i in self._out, "fl": car_flag(cflags[i]), "srf": surf[i]})
             ahead = sorted([r for r in rel if r["dt"] >= 0], key=lambda r: r["dt"])[:8]
             behind = sorted([r for r in rel if r["dt"] < 0], key=lambda r: -r["dt"])[:8]
             rel = list(reversed(ahead)) + behind
