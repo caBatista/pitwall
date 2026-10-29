@@ -44,6 +44,26 @@ if (params.get('w')) {
 }
 for (const [w, el] of widgets) w.mount(el, S);
 
+let dirty = false;
+// ---- UI scale: ?zoom=1.2 for this screen, or +/- keys (saved), 0 resets ----------------
+function setZoom(z) {
+  z = Math.round(Math.min(2, Math.max(0.7, z)) * 100) / 100;
+  document.documentElement.style.setProperty('--zoom', z);
+  if (on.has(trackmap)) { trackmap.fitVer = -1; trackmap.size(); }
+  dirty = true;
+  return z;
+}
+const on = new Set(widgets.map(([w]) => w));
+setZoom(Number(params.get('zoom')) || prefs.zoom);
+addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.('input')) return;
+  const step = { '+': 0.05, '=': 0.05, '-': -0.05 }[e.key];
+  if (step) prefs.zoom = setZoom(prefs.zoom + step);
+  else if (e.key === '0') prefs.zoom = setZoom(1.1);
+  else return;
+  savePrefs();
+});
+
 // ---- header ---------------------------------------------------------------------
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -93,7 +113,7 @@ function status() {
 }
 
 // ---- websocket -----------------------------------------------------------------
-let dirty = false;
+
 function connect() {
   const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
   S.ws = ws;
@@ -119,13 +139,16 @@ function connect() {
 connect();
 
 // ---- render loop (fast widgets every frame, slow ones twice a second) --------------
+// only the mounted widgets: with ?w= the others never ran mount()
 let slow = 0;
+const fast = [standings, relative, trackmap].filter((w) => on.has(w));
+const slowW = [fuel, weather].filter((w) => on.has(w));
 function frame(now) {
   if (dirty && S.st) {
     dirty = false;
     try {
-      standings.update(S); relative.update(S); trackmap.update(S);
-      if (now - slow > 400) { slow = now; header(); status(); fuel.update(S); weather.update(S); }
+      for (const w of fast) w.update(S);
+      if (now - slow > 400) { slow = now; header(); status(); for (const w of slowW) w.update(S); }
     } catch (err) { console.error(err); }
   }
   requestAnimationFrame(frame);

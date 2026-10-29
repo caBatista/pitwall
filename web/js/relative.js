@@ -1,4 +1,7 @@
-import { esc, prefs, savePrefs } from './util.js';
+import { esc, prefs, savePrefs, lapTime, flagHtml, makeHtml } from './util.js';
+
+const PIT = '<span class="tag">PIT</span>';
+const OUT = '<span class="tag out">OUT</span>';
 
 /**
  * Relative: everybody near you on track, ordered by track position, with the
@@ -37,6 +40,7 @@ export const relative = {
     this.rows.querySelectorAll('button').forEach((b) => b.classList.toggle('on', Number(b.dataset.n) === n));
 
     const now = st.t;
+    const cars = new Map(st.cars.map((c) => [c.i, c]));
     const ahead = st.rel.filter((r) => r.dt >= 0).slice(-n);   // nearest n ahead (list is far→near)
     const behind = st.rel.filter((r) => r.dt < 0).slice(0, n);
 
@@ -50,35 +54,40 @@ export const relative = {
       return now - t0 > 0.8 ? (Math.abs(r.dt) - v0) / (now - t0) : 0;
     };
 
+    // pos | # | make | flag | name | SR | iRating | best lap | relative
+    const cells = (i, d, extra) => {
+      const c = cars.get(i) || {};
+      const cls = S.classMap.get(d.cls) || { color: '#8b95a7' };
+      const [lic, sr] = (d.lic || '').split(' ');
+      // best lap (like RaceLab): the last one is -1 whenever iRacing invalidated it
+      const best = c.best ? `<span class="t ${c.cb ? 'cb' : ''}">${lapTime(c.best)}</span>` : '<span class="t dim">–</span>';
+      return `<div class="rpos">${c.cp || '–'}</div>
+        <div class="rcar" style="--cc:${cls.color}"><span class="rn">${esc(d.num)}</span><span class="mk">${makeHtml(d.make)}</span></div>
+        ${flagHtml(d.country)}
+        <div class="rname"><span class="nm">${esc(d.name)}</span>${extra}</div>
+        <div class="sr" style="--lc:${d.licColor}">${lic ? `<b>${esc((sr || '').slice(0, 3))}</b><i>${esc(lic)}</i>` : ''}</div>
+        <div class="irb">${d.ir ? `<b>${d.ir >= 1000 ? (d.ir / 1000).toFixed(1) + 'k' : d.ir}</b>` : ''}</div>
+        <div class="rlast">${best}</div>`;
+    };
+
     const row = (r, side) => {
       if (!r) return '<div class="rrow empty"></div>';
       const d = S.drivers[r.i];
       if (!d) return '<div class="rrow empty"></div>';
-      const cls = S.classMap.get(d.cls) || { color: '#8b95a7', name: '' };
       const rt = rate(r);
       let arrow = '';
       if (rt < -0.12) arrow = side === 'behind' ? '<span class="cl" style="color:var(--red)">▲</span>' : '<span class="cl" style="color:var(--green)">▲</span>';
       else if (rt > 0.12) arrow = '<span class="cl" style="color:var(--mute)">▼</span>';
       const lap = r.dl > 0 ? `<span class="lapt up">+${r.dl}L</span>` : r.dl < 0 ? `<span class="lapt down">${r.dl}L</span>` : '';
-      const tag = r.pit ? '<span class="tag">PIT</span>' : lap;
+      const tag = r.pit ? PIT : r.out ? OUT : lap;
       const t = Math.abs(r.dt);
-      const txt = (r.dt >= 0 ? '-' : '+') + (t < 10 ? t.toFixed(1) : t.toFixed(1));
-      return `<div class="rrow ${r.dl > 0 ? 'up' : r.dl < 0 ? 'down' : ''} ${r.pit ? 'pitrow' : ''} ${S.sel === r.i ? 'sel' : ''}" data-i="${r.i}" style="--cc:${cls.color}">
-        <div class="rt ${side}">${arrow}${txt}</div><div class="cbar"></div>
-        <div class="rn">#${esc(d.num)}</div>
-        <div class="rname">${esc(d.name)}</div>
-        <div class="rir">${d.ir || ''}</div>
-        <div class="rtag">${tag}</div></div>`;
+      const txt = (r.dt >= 0 ? '-' : '+') + t.toFixed(1);
+      return `<div class="rrow ${r.dl > 0 ? 'up' : r.dl < 0 ? 'down' : ''} ${r.pit ? 'pitrow' : ''} ${S.sel === r.i ? 'sel' : ''}" data-i="${r.i}">
+        ${cells(r.i, d, tag)}<div class="rt ${side}">${arrow}${txt}</div></div>`;
     };
 
     const md = S.drivers[st.me.i];
-    const mcls = md ? (S.classMap.get(md.cls) || { color: '#8b95a7' }) : { color: '#8b95a7' };
-    const meRow = `<div class="rrow me" style="--cc:${mcls.color}">
-      <div class="rt">YOU</div><div class="cbar"></div>
-      <div class="rn">#${esc(md?.num ?? '')}</div>
-      <div class="rname">${esc(md?.name ?? '')}</div>
-      <div class="rir">${md?.ir || ''}</div>
-      <div class="rtag">${st.me.pit ? '<span class="tag">PIT</span>' : ''}</div></div>`;
+    const meRow = md ? `<div class="rrow me">${cells(st.me.i, md, st.me.pit ? PIT : cars.get(st.me.i)?.out ? OUT : '')}<div class="rt">–</div></div>` : '<div class="rrow empty"></div>';
 
     // ahead is ordered far → near already; pad on top so the layout never jumps
     const a = [...Array(Math.max(0, n - ahead.length)).fill(null), ...ahead];

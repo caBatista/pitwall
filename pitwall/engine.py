@@ -32,6 +32,24 @@ def hexcolor(v, default="#8b95a7"):
         return default
 
 
+# CarPath prefix -> make (simple-icons slug on the client); first match wins
+MAKES = [
+    ("porsche", "porsche"), ("ferrari", "ferrari"), ("bmw", "bmw"), ("mclaren", "mclaren"),
+    ("mercedes", "mercedes"), ("amg", "mercedes"), ("audi", "audi"), ("lamborghini", "lamborghini"),
+    ("ford", "ford"), ("astonmartin", "astonmartin"), ("amvantage", "astonmartin"), ("amvalkyrie", "astonmartin"), ("aston", "astonmartin"),
+    ("chevyvette", "corvette"), ("chevy", "chevrolet"), ("chevrolet", "chevrolet"), ("toyota", "toyota"), ("acura", "acura"),
+    ("cadillac", "cadillac"), ("honda", "honda"), ("hyundai", "hyundai"), ("mazda", "mazda"),
+    ("mx5", "mazda"), ("nissan", "nissan"), ("mini", "mini"), ("kia", "kia"), ("renault", "renault"),
+    ("vw", "volkswagen"), ("volkswagen", "volkswagen"), ("lotus", "lotus"), ("ligier", "ligier"),
+    ("dallara", "dallara"), ("oreca", "oreca"), ("radical", "radical"), ("ginetta", "ginetta"),
+]
+
+
+def car_make(path):
+    p = (path or "").lower()
+    return next((make for prefix, make in MAKES if p.startswith(prefix)), "")
+
+
 def parse_km(text):
     m = re.search(r"([\d.]+)\s*(km|mi)", str(text or ""), re.I)
     if not m:
@@ -60,37 +78,45 @@ def flag_name(bits: int) -> str:
 
 
 class PassLog:
-    """Last time each car passed each slice of the track."""
+    """Last time each car crossed each bin boundary (tab[b] = crossing of b/BINS)."""
 
     def __init__(self):
         self.tab = {}
         self.last = {}
 
     def feed(self, idx, pct, t):
-        b = int(pct * BINS) % BINS
         tab = self.tab.setdefault(idx, [None] * BINS)
         prev = self.last.get(idx)
+        self.last[idx] = (pct, t)
         if prev is None or t < prev[1] or t - prev[1] > 3.0:
-            tab[b] = t
-            self.last[idx] = (b, t)
+            tab[int(pct * BINS) % BINS] = t
             return
-        pb, pt = prev
-        n = (b - pb) % BINS
-        if n == 0:
+        pp, pt = prev
+        d = (pct - pp) % 1.0
+        if d == 0 or d > 0.5:  # stopped, or jitter backwards
             return
-        if n <= 40:
-            for k in range(1, n + 1):
-                tab[(pb + k) % BINS] = pt + (t - pt) * k / n
-        else:  # jump (reset, tow, rewind): don't invent data
-            tab[b] = t
-        self.last[idx] = (b, t)
+        if d > 40 / BINS:  # jump (reset, tow, rewind): don't invent data
+            tab[int(pct * BINS) % BINS] = t
+            return
+        # interpolate the exact crossing time of every boundary passed this frame
+        x0 = pp * BINS
+        k = math.floor(x0) + 1
+        while k <= x0 + d * BINS:
+            tab[k % BINS] = pt + (t - pt) * (k - x0) / (d * BINS)
+            k += 1
 
     def since(self, idx, pct, now):
         tab = self.tab.get(idx)
         if not tab:
             return None
-        v = tab[int(pct * BINS) % BINS]
-        return None if v is None else now - v
+        x = pct * BINS
+        b = int(x) % BINS
+        v0, v1 = tab[b], tab[(b + 1) % BINS]
+        if v0 is None:
+            return None
+        if v1 is not None and 0 < v1 - v0 < 5.0:  # same pass: interpolate inside the bin
+            v0 += (v1 - v0) * (x - math.floor(x))
+        return now - v0
 
 
 class FuelTracker:
@@ -157,6 +183,8 @@ class Engine:
         self._wx_t = -1e9
         self._prev_t = None
         self._session_key = None
+        self._in_pit = set()   # cars seen on pit road
+        self._out = {}         # car -> laps completed when it left pit road (out lap)
 
     # ---- session info ------------------------------------------------------
     def set_session(self, info):
@@ -193,8 +221,12 @@ class Engine:
             est = float(d.get("CarClassEstLapTime") or est_default)
             classes.setdefault(cid, {"id": cid, "name": cname, "color": col, "est": est, "n": 0})
             classes[cid]["n"] += 1
+            # "Matthieu Laurent2": iRacing's suffix for duplicate names, not part of the name
+            name = re.sub(r"\d+$", "", (d.get("UserName") or "").strip()).strip() or f"Car {idx}"
             self.drivers[idx] = {
-                "i": idx, "name": d.get("UserName") or f"Car {idx}", "team": d.get("TeamName") or "",
+                # solo sessions report the user name as the team: not a team
+                "i": idx, "name": name, "team": "" if d.get("TeamName") == d.get("UserName") else d.get("TeamName") or "",
+                "make": car_make(d.get("CarPath")), "country": d.get("FlairName") or "",
                 "num": str(d.get("CarNumber") or ""), "cls": cid, "car": car,
                 "ir": d.get("IRating") or 0, "lic": d.get("LicString") or "",
                 "licColor": hexcolor(d.get("LicColor"), "#8b95a7"), "ai": bool(d.get("CarIsAI")),
@@ -212,6 +244,7 @@ class Engine:
             self.fuel.reset()
             self.log = PassLog()
             self.wx_hist.clear()
+            self._in_pit, self._out = set(), {}
         self.drivers_ver += 1
 
     def drivers_msg(self):
@@ -248,9 +281,15 @@ class Engine:
         pos = arr("CarIdxPosition", blank)
         last = arr("CarIdxLastLapTime", [-1.0] * 64)
         best = arr("CarIdxBestLapTime", [-1.0] * 64)
+        est = arr("CarIdxEstTime", None)
 
         snum = raw.get("SessionNum")
         sess = self.sessions.get(snum) or {}
+        # CarIdxBest/LastLapTime are wiped for cars that leave the world (garage, disconnect);
+        # the session results in SessionInfo keep everyone's times
+        res = {r.get("CarIdx"): r for r in (sess.get("ResultsPositions") or [])}
+        best = [b if b > 0 else float((res.get(i) or {}).get("FastestTime") or -1) for i, b in enumerate(best)]
+        last = [x if x > 0 else float((res.get(i) or {}).get("LastTime") or -1) for i, x in enumerate(last)]
         stype = (sess.get("SessionType") or "").strip()
         is_race = stype.lower() == "race"
         flag = flag_name(raw.get("SessionFlags"))
@@ -264,11 +303,22 @@ class Engine:
                 present.append(idx)
             if surf[idx] >= 0 and 0 <= pct[idx] <= 1.0:
                 self.log.feed(idx, pct[idx], t)
+            # out lap: from leaving pit road until the next line crossing
+            if surf[idx] < 0 or pitr[idx]:
+                self._out.pop(idx, None)
+                if pitr[idx]:
+                    self._in_pit.add(idx)
+            elif idx in self._in_pit:
+                self._in_pit.discard(idx)
+                self._out[idx] = lapc[idx]
+            elif idx in self._out and lapc[idx] != self._out[idx]:
+                del self._out[idx]
 
         tot = {i: (lapc[i] if lapc[i] is not None and lapc[i] > -2 else 0) + max(0.0, pct[i]) for i in present}
 
-        # ordering
-        if is_race and any(pos[i] > 0 for i in present):
+        # ordering: iRacing's own position whenever it has one (any session type, counts
+        # everyone with a time, not only the cars currently on track)
+        if any(pos[i] > 0 for i in present):
             order = sorted(present, key=lambda i: (pos[i] if pos[i] > 0 else 999 + i))
         elif is_race:
             order = sorted(present, key=lambda i: (-tot[i], i))
@@ -279,6 +329,10 @@ class Engine:
         for i in order:
             groups.setdefault(self.drivers[i]["cls"], []).append(i)
         cpos = {i: k + 1 for g in groups.values() for k, i in enumerate(g)}
+        if not is_race:  # practice/qualy: no lap time, no position (they are sorted last already)
+            for i in order:
+                if best[i] <= 0:
+                    overall[i] = cpos[i] = None
         class_best = {}
         for cid, g in groups.items():
             bs = [best[i] for i in g if best[i] > 0]
@@ -289,6 +343,34 @@ class Engine:
         if not ref or ref <= 0:
             ref = (self.classes.get(my_cls) or {}).get("est") or 100.0
 
+        def lap_of(i):
+            return (self.classes.get(self.drivers[i]["cls"]) or {}).get("est") or ref
+
+        def est_gap(a, b):
+            """Fallback before the PassLog has data: seconds since car a (ahead) was where car b is.
+            CarIdxEstTime follows the track's speed profile; b's value is rescaled to a's class."""
+            la = lap_of(a)
+            linear = ((pct[a] - pct[b]) % 1.0) * la
+            if est is None:
+                return linear
+            g = (est[a] - est[b] * la / lap_of(b)) % la
+            # EstTime isn't monotonic in the pit lane: a car a hair ahead in the stalls can
+            # carry a smaller estimate, and the modulo turns that into a whole lap (-203 s).
+            # If the estimate disagrees with the track order, trust the distance.
+            return linear if g > la / 2 and linear < la / 2 else g
+
+        def timed_gap(a, b):
+            """Seconds car b (behind) is from car a (ahead). The PassLog ("how long ago did a
+            pass where b is now") is exact while both race; it goes stale as soon as a stops or
+            crawls (pit stall, spin, tow), so then fall back to iRacing's estimate."""
+            est_s = est_gap(a, b)
+            if surf[a] != 3 or surf[b] != 3 or pitr[a] or pitr[b]:  # 3 = on track
+                return est_s
+            s = self.log.since(a, pct[b], t)
+            if s is None or s < 0 or abs(s - est_s) > max(2.0, 0.3 * est_s):
+                return est_s
+            return s
+
         def gap(i, j):
             """(laps_down, seconds) of car i relative to car j that is ahead of it."""
             diff = tot[j] - tot[i]
@@ -297,10 +379,7 @@ class Engine:
                 return laps, None
             if diff <= 0:
                 return 0, 0.0
-            s = self.log.since(j, pct[i], t)
-            if s is None or s < 0 or s > ref * 1.2:
-                s = diff * ref
-            return 0, round(s, 3)
+            return 0, round(timed_gap(j, i), 3)
 
         cars = []
         for k, i in enumerate(order):
@@ -311,7 +390,7 @@ class Engine:
                 "i": i, "p": overall[i], "cp": cpos[i], "lap": lapc[i], "pct": round(pct[i], 5),
                 "last": round(last[i], 3) if last[i] > 0 else None,
                 "best": round(best[i], 3) if best[i] > 0 else None,
-                "pit": bool(pitr[i]), "srf": surf[i],
+                "pit": bool(pitr[i]), "out": i in self._out, "srf": surf[i],
                 "cb": bool(best[i] > 0 and class_best.get(cid) == best[i]),
                 "pb": bool(best[i] > 0 and last[i] > 0 and abs(last[i] - best[i]) < 1e-4),
             }
@@ -344,16 +423,10 @@ class Engine:
                     continue
                 dp = pct[i] - pct[me]
                 dp = (dp + 0.5) % 1.0 - 0.5
-                if dp >= 0:   # ahead on track: how long ago did it pass where I am now
-                    s = self.log.since(i, pct[me], t)
-                    sec = s if s is not None and 0 <= s <= ref else dp * ref
-                    dtm = sec
-                else:         # behind: how long ago was I where it is now
-                    s = self.log.since(me, pct[i], t)
-                    sec = s if s is not None and 0 <= s <= ref else -dp * ref
-                    dtm = -sec
-                laps = int(round(tot[i] - tot[me] - dp))
-                rel.append({"i": i, "dt": round(dtm, 2), "dl": laps, "pit": bool(pitr[i]), "srf": surf[i]})
+                dtm = timed_gap(i, me) if dp >= 0 else -timed_gap(me, i)
+                # lap difference only means something in a race (in practice everyone is "laps ahead")
+                laps = int(round(tot[i] - tot[me] - dp)) if is_race else 0
+                rel.append({"i": i, "dt": round(dtm, 2), "dl": laps, "pit": bool(pitr[i]), "out": i in self._out, "srf": surf[i]})
             ahead = sorted([r for r in rel if r["dt"] >= 0], key=lambda r: r["dt"])[:8]
             behind = sorted([r for r in rel if r["dt"] < 0], key=lambda r: -r["dt"])[:8]
             rel = list(reversed(ahead)) + behind

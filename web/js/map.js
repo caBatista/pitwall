@@ -67,14 +67,14 @@ export const trackmap = {
     // asphalt ribbon
     ctx.lineJoin = ctx.lineCap = 'round';
     const path = () => { ctx.beginPath(); P.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); };
-    path(); ctx.strokeStyle = '#06080b'; ctx.lineWidth = 15; ctx.stroke();
-    path(); ctx.strokeStyle = '#2a3446'; ctx.lineWidth = 11; ctx.stroke();
-    path(); ctx.strokeStyle = '#161d29'; ctx.lineWidth = 8; ctx.stroke();
+    path(); ctx.strokeStyle = '#111112'; ctx.lineWidth = 15; ctx.stroke();
+    path(); ctx.strokeStyle = '#3a3a3e'; ctx.lineWidth = 11; ctx.stroke();
+    path(); ctx.strokeStyle = '#2a2a2d'; ctx.lineWidth = 8; ctx.stroke();
 
     // start / finish
     const [sx, sy] = P[0], [nx, ny] = P[3];
     const a = Math.atan2(ny - sy, nx - sx) + Math.PI / 2;
-    ctx.strokeStyle = '#e8edf5'; ctx.lineWidth = 2.5; ctx.beginPath();
+    ctx.strokeStyle = '#f4f2ec'; ctx.lineWidth = 2.5; ctx.beginPath();
     ctx.moveTo(sx - Math.cos(a) * 9, sy - Math.sin(a) * 9); ctx.lineTo(sx + Math.cos(a) * 9, sy + Math.sin(a) * 9); ctx.stroke();
 
     // cars: others first, then selected, then me on top
@@ -89,12 +89,12 @@ export const trackmap = {
       if (c.i === me || c.i === S.sel || c.pct == null || c.pct < 0 || c.srf < 0) continue;
       const d = S.drivers[c.i];
       ctx.globalAlpha = c.pit ? 0.4 : 0.95;
-      dot(c, 4.5, S.classMap.get(d?.cls)?.color || '#8b95a7', '#06080b');
+      dot(c, 4.5, S.classMap.get(d?.cls)?.color || '#8a8a8f', '#111112');
     }
     ctx.globalAlpha = 1;
     const label = (c, text, col) => {
       const [x, y] = this.fit(this.at(pts, c.pct));
-      ctx.font = '600 11px JetBrains Mono, monospace'; ctx.textAlign = 'left';
+      ctx.font = '600 11px Geist Mono, monospace'; ctx.textAlign = 'left';
       ctx.fillStyle = '#06080bcc'; const w = ctx.measureText(text).width + 8;
       ctx.fillRect(x + 10, y - 17, w, 16); ctx.fillStyle = col; ctx.fillText(text, x + 14, y - 5);
     };
@@ -107,8 +107,8 @@ export const trackmap = {
     const mc = st.cars.find((c) => c.i === me);
     if (mc && mc.pct >= 0) {
       const d = S.drivers[me];
-      const [x, y] = dot(mc, 6.5, S.classMap.get(d?.cls)?.color || '#7cf0c9', '#ffffff');
-      ctx.beginPath(); ctx.arc(x, y, 11, 0, 7); ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(124,240,201,.55)'; ctx.stroke();
+      const [x, y] = dot(mc, 6.5, '#f4b400', '#111112');
+      ctx.beginPath(); ctx.arc(x, y, 11, 0, 7); ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(244,180,0,.6)'; ctx.stroke();
     }
   },
 };

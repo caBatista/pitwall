@@ -31,7 +31,11 @@ def _clean(o):
 @web.middleware
 async def no_cache(request, handler):
     resp = await handler(request)
-    resp.headers["Cache-Control"] = "no-store"
+    # code is never stored (F5 picks up edits). Images/fonts may be stored but are always
+    # revalidated (cheap 304), so the relative doesn't re-download logos on every redraw and
+    # a logo added to img/makes later still shows up on the next F5 (a 404 is revalidated too).
+    static = request.path.startswith(("/img/", "/fonts/"))
+    resp.headers["Cache-Control"] = "no-cache" if static else "no-store"
     return resp
 
 

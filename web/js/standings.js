@@ -63,8 +63,8 @@ export const standings = {
       const d = S.drivers[c.i];
       const cls = S.classMap.get(d.cls) || { color: '#8b95a7' };
       const me = c.i === st.me.i;
-      const big = inGroup ? c.cp : c.p;
-      const sub = multi ? (inGroup ? `P${c.p}` : `C${c.cp}`) : '';
+      const big = (inGroup ? c.cp : c.p) ?? '–';
+      const sub = multi && c.p != null ? (inGroup ? `P${c.p}` : `C${c.cp}`) : '';
       const gl = inGroup ? c.gl : c.go, ld = inGroup ? c.ld : c.lo;
       const gi = inGroup ? c.gi : c.gio, li = inGroup ? c.li : c.lio;
       const leader = big === 1;
@@ -96,7 +96,7 @@ export const standings = {
         html += list.map((c) => rowHtml(c, true)).join('');
       }
     } else {
-      const all = [...byCls.values()].flat().sort((a, b) => a.p - b.p);
+      const all = [...byCls.values()].flat().sort((a, b) => (a.p ?? 999) - (b.p ?? 999));
       html = all.map((c) => rowHtml(c, false)).join('');
     }
     if (!html) html = '<div class="map-note"><b>No cars yet</b>Cars appear here as soon as they are on track.</div>';
@@ -113,7 +113,7 @@ export const standings = {
       const d = m.deltaOk && m.delta != null ? m.delta : null;
       const inc = m.inc != null ? `${m.inc}${m.incLimit && m.incLimit !== 'unlimited' ? '/' + m.incLimit : ''}` : '–';
       const bar = `
-        <div class="kv"><small>Position</small><b>P${mc.p}${multi ? ` · C${mc.cp}` : ''}</b></div>
+        <div class="kv"><small>Position</small><b>${mc.p != null ? `P${mc.p}` : '–'}${multi && mc.p != null ? ` · C${mc.cp}` : ''}</b></div>
         <div class="kv"><small>Lap</small><b>${m.lap ?? '–'}</b></div>
         <div class="kv"><small>Last</small><b>${lapTime(m.last)}</b></div>
         <div class="kv"><small>Best</small><b>${lapTime(m.best)}</b></div>

@@ -38,12 +38,110 @@ export function tod(sec) {
   return `${String(Math.floor(sec / 3600)).padStart(2, '0')}:${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}`;
 }
 
+// ---- flags & car makes ----------------------------------------------------
+// iRacing gives the flair as an English country name ("Czechia", "England");
+// build name -> ISO code from the browser's own region names.
+const FLAG_CDN = 'https://cdn.jsdelivr.net/npm/flag-icons@7.2.3/flags/4x3/';
+const ICON_CDN = 'https://cdn.jsdelivr.net/npm/simple-icons@13.0.0/icons/';
+const norm = (s) => String(s).toLowerCase().replace(/&/g, 'and').replace(/[^a-z]/g, '');
+// deprecated/aliased codes the browser still names ("DD" is also "Germany")
+const OLD_CODES = new Set(['BU', 'CS', 'DD', 'FX', 'NT', 'QO', 'SU', 'TP', 'UK', 'YU', 'ZR', 'EU', 'EZ', 'UN']);
+const ISO = (() => {
+  const map = { england: 'gb-eng', scotland: 'gb-sct', wales: 'gb-wls', northernireland: 'gb-nir', usa: 'us', russia: 'ru', turkey: 'tr' };
+  try {
+    const dn = new Intl.DisplayNames(['en'], { type: 'region' });
+    for (let a = 65; a <= 90; a++) {
+      for (let b = 65; b <= 90; b++) {
+        const code = String.fromCharCode(a, b);
+        if (OLD_CODES.has(code)) continue;
+        const name = dn.of(code);
+        if (name && name !== code && !(norm(name) in map)) map[norm(name)] = code.toLowerCase();
+      }
+    }
+  } catch { /* no Intl: no flags */ }
+  return map;
+})();
+
+export function flagHtml(country) {
+  const iso = ISO[norm(country || '')];
+  return iso ? `<i class="flag-i" title="${esc(country)}" style="background-image:url(${FLAG_CDN}${iso}.svg)"></i>` : '<i class="flag-i none"></i>';
+}
+
+// Your own logos win: drop web/img/makes/<make>.png (porsche.png, bmw.png, ...).
+// Each make is probed once; until it answers (or if missing) the simple-icons glyph is used.
+// ?v= sidesteps 404s a browser remembered from before the file existed
+const localSrc = (make) => `/img/makes/${make}.png?v=2`;
+const LOCAL = new Map();   // make -> false | data: URL of the prepared logo
+
+// Logo packs are made for white pages, at 18 px they need help:
+//  - keep only the emblem: split the art into horizontal bands at empty rows and keep the
+//    heaviest band, which drops a "PORSCHE" / "Mercedes-Benz" wordmark above or below it;
+//  - trim the transparent margin so the emblem fills the box;
+//  - a mostly-black logo (Mercedes star) is painted off-white to read on the dark card.
+function prepare(im) {
+  const W = im.naturalWidth, H = im.naturalHeight, k = Math.min(1, 512 / Math.max(W, H));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(W * k)); c.height = Math.max(1, Math.round(H * k));
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(im, 0, 0, c.width, c.height);
+  const d = x.getImageData(0, 0, c.width, c.height), p = d.data, cw = c.width;
+  const solid = (q) => p[q * 4 + 3] >= 24;
+  const rows = new Array(c.height).fill(0);
+  for (let q = 0; q < cw * c.height; q++) if (solid(q)) rows[(q / cw) | 0]++;
+  // bands of rows with ink, split by a gap of >= 2% of the height
+  const gap = Math.max(2, Math.round(c.height * 0.02)), bands = [];
+  let start = -1, mass = 0, empty = 0;
+  rows.forEach((r, y) => {
+    if (r) { if (start < 0) { start = y; mass = 0; } mass += r; empty = 0; }
+    else if (start >= 0 && ++empty >= gap) { bands.push([start, y - empty, mass]); start = -1; }
+  });
+  if (start >= 0) bands.push([start, c.height - 1 - empty, mass]);
+  if (!bands.length) return im.src;
+  let [by0, by1] = bands.reduce((a, b) => (b[2] > a[2] ? b : a));
+  // a flat band is a wordmark cutting through a thin emblem (Nissan): keep the whole art
+  const span = (y0b, y1b) => { let a = cw, b = -1; for (let y = y0b; y <= y1b; y++) for (let px = 0; px < cw; px++) if (solid(y * cw + px)) { if (px < a) a = px; if (px > b) b = px; } return b - a + 1; };
+  if (bands.length > 1 && span(by0, by1) > 4 * (by1 - by0 + 1)) { by0 = bands[0][0]; by1 = bands[bands.length - 1][1]; }
+  let x0 = cw, y0 = by1, x1 = -1, y1 = by0, val = 0, n = 0;
+  for (let y = by0; y <= by1; y++) {
+    for (let px = 0; px < cw; px++) {
+      const q = y * cw + px;
+      if (!solid(q)) continue;
+      if (px < x0) x0 = px; if (px > x1) x1 = px; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      val += Math.max(p[q * 4], p[q * 4 + 1], p[q * 4 + 2]); n++;
+    }
+  }
+  if (val / n < 70) {   // dark logo on a dark card (by brightest channel, so red stays red)
+    for (let i = 0; i < p.length; i += 4) { p[i] = 244; p[i + 1] = 242; p[i + 2] = 236; }
+    x.putImageData(d, 0, 0);
+  }
+  const w = x1 - x0 + 1, h = y1 - y0 + 1, S = 64, s = S / Math.max(w, h);
+  const o = document.createElement('canvas'); o.width = S; o.height = S;
+  o.getContext('2d').drawImage(c, x0, y0, w, h, (S - w * s) / 2, (S - h * s) / 2, w * s, h * s);
+  return o.toDataURL('image/png');
+}
+
+function probe(make) {
+  if (!make || LOCAL.has(make)) return;
+  LOCAL.set(make, false);
+  const im = new Image();
+  im.onload = () => { try { LOCAL.set(make, prepare(im)); } catch { LOCAL.set(make, im.src); } };
+  im.src = localSrc(make);
+}
+
+const NO_ICON = new Set(['corvette', 'lotus', 'ligier', 'dallara', 'oreca', 'radical', 'ginetta', '']);
+export function makeHtml(make) {
+  probe(make);
+  if (LOCAL.get(make)) return `<img class="make-img" src="${LOCAL.get(make)}" alt="${esc(make)}">`;
+  if (NO_ICON.has(make)) return `<i class="make-i txt">${esc((make || '').slice(0, 3).toUpperCase())}</i>`;
+  return `<i class="make-i" title="${esc(make)}" style="--icon:url(${ICON_CDN}${make}.svg)"></i>`;
+}
+
 // ---- preferences & units --------------------------------------------------
 const KEY = 'pitwall.prefs.v1';
 export const prefs = (() => {
   let p = {};
   try { p = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { /* ignore */ }
-  return Object.assign({ units: 'metric', standMode: 'class', classFilter: null, relRows: 4, reserve: 0.5, targetLaps: 10 }, p);
+  return Object.assign({ units: 'metric', standMode: 'class', classFilter: null, relRows: 3, zoom: 1.1, reserve: 0.5, targetLaps: 10 }, p);
 })();
 export function savePrefs() {
   try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ }

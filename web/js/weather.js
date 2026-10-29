@@ -13,7 +13,7 @@ export const weather = {
   mount(root) {
     root.innerHTML = `
       <div class="card-h"><div class="ttl"><i></i>Weather</div>
-        <div class="leg"><span><i style="background:var(--amber)"></i>Track</span><span><i style="background:var(--blue)"></i>Air</span></div></div>
+        <div class="leg"><span><i style="background:var(--amber)"></i>Track</span><span><i style="background:var(--txt)"></i>Air</span></div></div>
       <div class="wx" id="wx-grid"></div>`;
     this.grid = root.querySelector('#wx-grid');
     this.grid.innerHTML = `
@@ -78,7 +78,7 @@ export const weather = {
     }
 
     const pr = w.precip;
-    q('#wx-pr').innerHTML = pr == null ? '–' : pr > 0.02 ? `<span style="color:var(--blue)">${(pr * 100).toFixed(0)}%</span>` : '<span style="color:var(--dim)">None</span>';
+    q('#wx-pr').innerHTML = pr == null ? '–' : pr > 0.02 ? `<span style="color:var(--txt)">${(pr * 100).toFixed(0)}%</span>` : '<span style="color:var(--dim)">None</span>';
     q('#wx-hu').textContent = `${w.hum == null ? '–' : Math.round(w.hum * 100) + '%'} · ${w.fog ? Math.round(w.fog * 100) + '%' : '0%'}`;
     q('#wx-sk').textContent = w.skies == null ? '–' : SKIES[w.skies] || '–';
     const p = fmt.press(w.press);
@@ -102,13 +102,13 @@ export const weather = {
     // rain bars
     h.forEach((p, k) => {
       if (p[4] > 0.02 || p[3] > 2) {
-        c.fillStyle = `rgba(94,170,255,${Math.min(0.45, 0.12 + p[4])})`;
+        c.fillStyle = `rgba(244,242,236,${Math.min(0.22, 0.06 + p[4] * 0.3)})`;
         c.fillRect(x(k) - 1, 0, Math.max(2, W / h.length), H);
       }
     });
     const line = (arr, col) => { c.beginPath(); arr.forEach((v, k) => (k ? c.lineTo(x(k), y(v)) : c.moveTo(x(k), y(v)))); c.strokeStyle = col; c.lineWidth = 1.8; c.lineJoin = 'round'; c.stroke(); };
-    line(ai, '#5eaaff'); line(tr, '#ffc83d');
-    c.font = '600 9.5px JetBrains Mono, monospace'; c.fillStyle = '#566175'; c.textAlign = 'left';
+    line(ai, '#f4f2ec'); line(tr, '#f4b400');
+    c.font = '600 9.5px Geist Mono, monospace'; c.fillStyle = '#8a8a8f'; c.textAlign = 'left';
     c.fillText(hi.toFixed(0), 2, 9); c.fillText(lo.toFixed(0), 2, H - 1);
   },
 };

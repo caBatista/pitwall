@@ -31,7 +31,7 @@ SCALARS = [
 CAR_ARRAYS = [
     "CarIdxLapCompleted", "CarIdxLapDistPct", "CarIdxTrackSurface",
     "CarIdxOnPitRoad", "CarIdxPosition", "CarIdxClassPosition",
-    "CarIdxLastLapTime", "CarIdxBestLapTime",
+    "CarIdxLastLapTime", "CarIdxBestLapTime", "CarIdxEstTime",
 ]
 
 
@@ -328,6 +328,7 @@ class MockSource:
         cpos = [0] * n
         last = [-1.0] * n
         best = [-1.0] * n
+        est = [0.0] * n
         started = self.t > 2
         ranked = sorted(self.cars, key=lambda c: -c["d"])
         cls_rank = {}
@@ -343,7 +344,8 @@ class MockSource:
             pitr[i] = 1 if c["pit"] else 0
             last[i] = c["last"]
             best[i] = c["best"]
-        me = self.cars[0]
+            est[i] = pct[i] * 100.0 / c["cls"][4]
+        me =self.cars[0]
         mp = me["d"] % 1.0
         pit = me["pit"] is not None
         speed = me.get("v", 0.0)
@@ -382,5 +384,6 @@ class MockSource:
             "CarIdxLapCompleted": lapc, "CarIdxLapDistPct": pct, "CarIdxTrackSurface": surf,
             "CarIdxOnPitRoad": pitr, "CarIdxPosition": pos, "CarIdxClassPosition": cpos,
             "CarIdxLastLapTime": last, "CarIdxBestLapTime": best,
+            "CarIdxEstTime": est,
         }
         return raw
