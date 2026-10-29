@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pitwall",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "pitwall"],
+      "port": 8765
+    },
+    {
+      "name": "pitwall-mock",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "pitwall", "--mock"],
+      "port": 8765
+    }
+  ]
+}
