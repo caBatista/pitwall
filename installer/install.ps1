@@ -12,7 +12,7 @@ $menu    = Join-Path ([Environment]::GetFolderPath('Programs')) "$app.lnk"
 $regKey  = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$app"
 $src     = Join-Path (Split-Path $PSScriptRoot -Parent) "dist\$app"
 
-Get-Process -Name $app -ErrorAction SilentlyContinue | Stop-Process -Force   # can't overwrite a running exe
+Get-Process -Name $app -ErrorAction SilentlyContinue | Stop-Process -Force -PassThru | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue   # can't overwrite a running exe: wait until it is gone
 
 if ($Uninstall) {
     Remove-Item $menu -ErrorAction SilentlyContinue
