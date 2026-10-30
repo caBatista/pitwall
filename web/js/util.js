@@ -171,8 +171,8 @@ export const OUT = '<span class="tag out">OUT</span>';
 
 // last pit stop, RaceLab style: amber "L12" (lap of the stop) + time on pit road, outlined.
 // The time blinks while the car is still in the pits (rows re-render every frame: computed, not CSS).
-// PIT_ALL: shown in every session for testing; set false to show it in races only.
-export const PIT_ALL = true;
+// PIT_ALL: true shows it in every session (testing); races only otherwise.
+export const PIT_ALL = false;
 export function pitHtml(c, kind) {
   if (!c || c.pl == null || (!PIT_ALL && kind !== 'race')) return '';
   const s = Math.max(0, Math.floor(c.pd || 0));
