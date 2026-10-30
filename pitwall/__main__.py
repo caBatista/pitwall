@@ -26,6 +26,9 @@ def main():
     p = argparse.ArgumentParser(prog="pitwall", description="Local real-timing dashboard for iRacing")
     p.add_argument("--mock", action="store_true", help="run on a simulated multiclass race (no iRacing needed)")
     p.add_argument("--speed", type=float, default=4.0, help="simulation speed multiplier (with --mock)")
+    p.add_argument("--mock-session", default="race", choices=["race", "qualify", "practice", "test"],
+                   help="session type the simulator pretends to be (with --mock)")
+    p.add_argument("--mock-track", type=int, default=9999, help="TrackID the simulator reports, e.g. 229 for COTA (with --mock)")
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--lan", action="store_true", help="listen on your local network (phone/tablet access)")
     p.add_argument("--hz", type=float, default=20.0, help="updates per second sent to the browser")
@@ -33,7 +36,8 @@ def main():
     p.add_argument("--maps-dir", default=str(Path(__file__).resolve().parent.parent / "maps"))
     args = p.parse_args()
 
-    source = MockSource(speed=args.speed) if args.mock else IRacingSource()
+    stypes = {"race": "Race", "qualify": "Open Qualify", "practice": "Practice", "test": "Offline Testing"}
+    source = MockSource(speed=args.speed, session=stypes[args.mock_session], track_id=args.mock_track) if args.mock else IRacingSource()
     mapper = TrackMapper(args.maps_dir, flip=args.flip_map)
     engine = Engine(mapper)
     app = App(source, engine, hz=args.hz).build()

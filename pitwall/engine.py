@@ -22,6 +22,46 @@ UNLIMITED_LAPS = 32000
 CAR_FLAGS = [(0x20000, "dq"), (0x10000, "black"), (0x100000, "repair"), (0x80000, "warn")]
 
 
+SOF_K = 1600 / math.log(2)
+
+
+def limit(v):
+    """WeekendOptions incident limits: a number, or None for 'unlimited'."""
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def session_kind(stype):
+    s = (stype or "").lower()
+    if "race" in s:
+        return "race"
+    if "qualif" in s:
+        return "qualify"
+    if "test" in s:
+        return "test"
+    return "practice"   # practice, warmup, anything else
+
+
+def sof(irs):
+    irs = [r for r in irs if r and r > 0]
+    return round(SOF_K * math.log(len(irs) / sum(math.exp(-r / SOF_K) for r in irs))) if irs else None
+
+
+def ir_change(me_ir, me_pos, field):
+    """Estimated iRating change, the community formula for iRacing's Elo-like system.
+    field: [(ir, pos)] of every starter in my class, me included; pos 1-based."""
+    n = len(field)
+    if n < 2 or not me_ir or not me_pos:
+        return None
+    q = lambda r: math.exp(-r / SOF_K)
+    expected = sum((1 - q(me_ir)) * q(r) / ((1 - q(r)) * q(me_ir) + (1 - q(me_ir)) * q(r))
+                   for r, _ in field) - 0.5   # the sum includes me vs me = 0.5
+    fudge = (n / 2 - me_pos) / 100
+    return round((n - me_pos - expected - fudge) * 200 / n)
+
+
 def car_flag(bits):
     bits = int(bits or 0)
     return next((name for bit, name in CAR_FLAGS if bits & bit), None)
@@ -192,8 +232,20 @@ class Engine:
         self._wx_t = -1e9
         self._prev_t = None
         self._session_key = None
+        self._sess_id = None   # (SubSessionID, SessionNum): laps, fuel, grid... belong to one session
+        self._qgrid = {}       # starting grid from the qualifying results
+        self._qtimes = {}      # car -> (fastest, last) qualifying lap, shown until the green
         self._in_pit = set()   # cars seen on pit road
         self._out = {}         # car -> laps completed when it left pit road (out lap)
+        self._pits = {}        # car -> [lap of its last pit stop, pit road entry time, time on pit road or None while there]
+        self._laps = {}        # car -> deque of its latest valid lap times, newest first
+        self._seen_last = {}   # car -> CarIdxLastLapTime last seen (a change = a new lap)
+        self.tyres = {}        # tyre compound index -> "dry" / "wet" (DriverInfo.DriverTires)
+        self._grid = {}        # car -> starting position (overall) for positions gained in a race
+        self._mylaps = deque(maxlen=60)   # my lap log (test sessions): lap, time, temp, fuel left, fuel used
+        self._my_last = None
+        self._fuel_at_line = None
+        self._my_lapc = None
 
     # ---- session info ------------------------------------------------------
     def set_session(self, info):
@@ -211,13 +263,35 @@ class Engine:
             "lengthKm": length_km,
             "turns": wk.get("TrackNumTurns"),
             "incLimit": (wk.get("WeekendOptions") or {}).get("IncidentLimit"),
+            "incDq": limit((wk.get("WeekendOptions") or {}).get("IncidentLimit")),
+            "incPen": limit((wk.get("WeekendOptions") or {}).get("IncidentWarningInitialLimit")),
+            "incPenNext": limit((wk.get("WeekendOptions") or {}).get("IncidentWarningSubsequentLimit")),
             "category": wk.get("Category"),
+            "seriesId": wk.get("SeriesID"),
+            "subId": wk.get("SubSessionID"),
+            "sectors": [round(float(x.get("SectorStartPct") or 0), 5) for x in (info.get("SplitTimeInfo") or {}).get("Sectors") or []],
         }
+        # starting grid for "positions gained" (qualifying results, 0-based in iRacing)
+        qres = (info.get("QualifyResultsInfo") or {}).get("Results") or []
+        self._qgrid = {int(r["CarIdx"]): int(r.get("Position", -1)) + 1 for r in qres if r.get("CarIdx") is not None}
         self.sessions = {s.get("SessionNum"): s for s in (si.get("Sessions") or [])}
+        # qualifying lap times, shown in the race until the green flag
+        self._qtimes = {}
+        for r in (info.get("QualifyResultsInfo") or {}).get("Results") or []:
+            if r.get("CarIdx") is not None and (r.get("FastestTime") or 0) > 0:
+                self._qtimes[int(r["CarIdx"])] = (float(r["FastestTime"]), None)
+        for q in self.sessions.values():
+            if session_kind(q.get("SessionType")) == "qualify":
+                for r in q.get("ResultsPositions") or []:
+                    fast, lst = float(r.get("FastestTime") or -1), float(r.get("LastTime") or -1)
+                    if r.get("CarIdx") is not None and fast > 0:
+                        self._qtimes[int(r["CarIdx"])] = (fast, lst if lst > 0 else None)
         self.player = int(di.get("DriverCarIdx") or 0)
         mx = float(di.get("DriverCarFuelMaxLtr") or 0) * float(di.get("DriverCarMaxFuelPct") or 1)
         self.tank = mx
         est_default = float(di.get("DriverCarEstLapTime") or 100.0)
+        self.tyres = {int(t.get("TireIndex", k)): ("wet" if "wet" in str(t.get("TireCompoundType", "")).lower() else "dry")
+                      for k, t in enumerate(di.get("DriverTires") or [])}
         self.drivers, classes = {}, {}
         for d in di.get("Drivers") or []:
             if d.get("IsSpectator") or d.get("CarIsPaceCar") or d.get("CarIdx") is None:
@@ -240,18 +314,19 @@ class Engine:
                 "ir": d.get("IRating") or 0, "lic": d.get("LicString") or "",
                 "licColor": hexcolor(d.get("LicColor"), "#8b95a7"), "ai": bool(d.get("CarIsAI")),
             }
+        for c in classes.values():   # strength of field, iRacing's formula, per class
+            irs = [d["ir"] for d in self.drivers.values() if d["cls"] == c["id"] and d["ir"] > 0]
+            c["sof"] = round(SOF_K * math.log(len(irs) / sum(math.exp(-r / SOF_K) for r in irs))) if irs else None
         ordered = sorted(classes.values(), key=lambda c: c["est"])
+        self.meta["sof"] = sof([d["ir"] for d in self.drivers.values()])
         self.classes = {c["id"]: c for c in ordered}
         self.class_order = [c["id"] for c in ordered]
         if len(self.classes) == 1:  # single class: the colour carries no information, use the dash amber
             next(iter(self.classes.values()))["color"] = "#f4b400"
-        if key != self._session_key:
+        if key != self._session_key:   # new track: map, timing loops
             self._session_key = key
-            self.mapper.set_track(key)
-            self.fuel.reset()
+            self.mapper.set_track(key, track_id)
             self.log = PassLog()
-            self.wx_hist.clear()
-            self._in_pit, self._out = set(), {}
         self.drivers_ver += 1
 
     def drivers_msg(self):
@@ -263,7 +338,8 @@ class Engine:
 
     def track_msg(self):
         return {"type": "track", "key": self.mapper.key, "status": self.mapper.status,
-                "ver": self.mapper.version, "points": self.mapper.points}
+                "ver": self.mapper.version, "points": self.mapper.points,
+                "turns": self.mapper.turns, "source": self.mapper.source, "offset": self.mapper.offset}
 
     def wx_msg(self):
         return {"type": "wx", "hist": list(self.wx_hist)}
@@ -290,8 +366,34 @@ class Engine:
         best = arr("CarIdxBestLapTime", [-1.0] * 64)
         est = arr("CarIdxEstTime", None)
         cflags = arr("CarIdxSessionFlags", blank)
+        tyre = arr("CarIdxTireCompound", [-1] * 64)
+        # lap history for the standings delta columns: a new CarIdxLastLapTime is a new lap
+        # (an invalidated lap reports -1 and is simply not recorded)
+        if self._seen_last is None:   # first frame of a session: take note, a lap only counts once it changes
+            self._seen_last = dict(enumerate(last))
+        for i, lt in enumerate(last):
+            if lt and lt > 0 and lt != self._seen_last.get(i):
+                h = self._laps.setdefault(i, deque(maxlen=3))
+                if not h or h[0] != round(lt, 3):   # -1 then the same time again (left/rejoined): not a new lap
+                    h.appendleft(round(lt, 3))
+            self._seen_last[i] = lt
 
         snum = raw.get("SessionNum")
+        # a new session (another event, or practice -> qualify -> race) starts its own laps:
+        # same track or not, nothing lap-related carries over
+        sid = (self.meta.get("subId"), snum)
+        if sid != self._sess_id:
+            self._sess_id = sid
+            self.fuel.reset()
+            self.wx_hist.clear()   # weather is per session too (set by hand, or rain in one and not the next)
+            self._wx_t = -1e9
+            self._in_pit, self._out, self._pits = set(), {}, {}
+            self._laps, self._seen_last = {}, None
+            self._mylaps, self._my_last, self._fuel_at_line, self._my_lapc = deque(maxlen=60), raw.get("LapLastLapTime"), None, None
+            self._pending_lap = None
+            self._grid = {}
+        if not self._grid and self._qgrid:
+            self._grid = dict(self._qgrid)
         sess = self.sessions.get(snum) or {}
         # CarIdxBest/LastLapTime are wiped for cars that leave the world (garage, disconnect);
         # the session results in SessionInfo keep everyone's times
@@ -299,34 +401,53 @@ class Engine:
         best = [b if b > 0 else float((res.get(i) or {}).get("FastestTime") or -1) for i, b in enumerate(best)]
         last = [x if x > 0 else float((res.get(i) or {}).get("LastTime") or -1) for i, x in enumerate(last)]
         stype = (sess.get("SessionType") or "").strip()
-        is_race = stype.lower() == "race"
+        kind = session_kind(stype)
+        is_race = kind == "race"
         flag = flag_name(raw.get("SessionFlags"))
         me = int(raw.get("PlayerCarIdx") if raw.get("PlayerCarIdx") is not None else self.player)
+        talk = raw.get("RadioTransmitCarIdx")
 
         present = []
         for idx in self.drivers:
             if idx >= len(surf):
                 continue
-            if surf[idx] >= 0 or pos[idx] > 0 or best[idx] > 0:
-                present.append(idx)
+            present.append(idx)   # everyone registered, also those who never went on track
             if surf[idx] >= 0 and 0 <= pct[idx] <= 1.0:
                 self.log.feed(idx, pct[idx], t)
             # out lap: from leaving pit road until the next line crossing
             if surf[idx] < 0 or pitr[idx]:
                 self._out.pop(idx, None)
                 if pitr[idx]:
+                    if idx not in self._in_pit:   # last pit stop: lap it is on and pit road time
+                        self._pits[idx] = [(lapc[idx] or 0) + 1, t, None]
                     self._in_pit.add(idx)
+                elif idx in self._pits and self._pits[idx][2] is None:   # to the garage from the pits: not a stop
+                    del self._pits[idx]
+                    self._in_pit.discard(idx)
             elif idx in self._in_pit:
                 self._in_pit.discard(idx)
                 self._out[idx] = lapc[idx]
+                if idx in self._pits and self._pits[idx][2] is None:
+                    self._pits[idx][2] = t - self._pits[idx][1]
             elif idx in self._out and lapc[idx] != self._out[idx]:
                 del self._out[idx]
 
         tot = {i: (lapc[i] if lapc[i] is not None and lapc[i] > -2 else 0) + max(0.0, pct[i]) for i in present}
 
-        # ordering: iRacing's own position whenever it has one (any session type, counts
-        # everyone with a time, not only the cars currently on track)
-        if any(pos[i] > 0 for i in present):
+        # ordering. Race, while racing: live order by distance covered (laps + lap fraction), the
+        # way overlays do it - CarIdxPosition only changes when a car crosses the line. Cars not
+        # on track keep iRacing's position behind them. Otherwise iRacing's position when it has one.
+        racing = is_race and int(raw.get("SessionState") or 0) == 4
+        if racing and any(lapc[i] is not None and lapc[i] >= 0 and surf[i] >= 0 for i in present):
+            running = [i for i in present if lapc[i] is not None and lapc[i] >= 0 and surf[i] >= 0]
+            rest = [i for i in present if i not in running]
+            order = sorted(running, key=lambda i: (-tot[i], i)) + sorted(rest, key=lambda i: (pos[i] if pos[i] > 0 else 999 + i))
+        elif is_race and int(raw.get("SessionState") or 0) < 4:
+            # before the green (grid, parade/formation lap): frozen in grid order, whatever
+            # happens on track - nothing moves, neither the rows nor the numbers
+            grid = self._grid or self._qgrid
+            order = sorted(present, key=lambda i: (grid.get(i) or (pos[i] if pos[i] > 0 else 999), i))
+        elif any(pos[i] > 0 for i in present):
             order = sorted(present, key=lambda i: (pos[i] if pos[i] > 0 else 999 + i))
         elif is_race:
             order = sorted(present, key=lambda i: (-tot[i], i))
@@ -341,6 +462,11 @@ class Engine:
             for i in order:
                 if best[i] <= 0:
                     overall[i] = cpos[i] = None
+        # race, before the green: Last / Fastest are the qualifying laps and gaps compare them
+        pre_green = is_race and int(raw.get("SessionState") or 0) < 4
+        if pre_green:
+            best = [self._qtimes.get(i, (-1, None))[0] for i in range(len(best))]
+            last = [self._qtimes.get(i, (-1, None))[1] or self._qtimes.get(i, (-1, None))[0] for i in range(len(last))]
         class_best = {}
         for cid, g in groups.items():
             bs = [best[i] for i in g if best[i] > 0]
@@ -389,6 +515,16 @@ class Engine:
                 return 0, 0.0
             return 0, round(timed_gap(j, i), 3)
 
+        # starting grid: qualifying results, else the first racing position we see
+        if is_race and int(raw.get("SessionState") or 0) >= 4:
+            for i in present:
+                if i not in self._grid and pos[i] > 0:
+                    self._grid[i] = pos[i]
+        cgrid = {}   # start position within the class
+        for g in groups.values():
+            ranked = sorted((i for i in g if i in self._grid), key=lambda i: self._grid[i])
+            cgrid.update({i: k + 1 for k, i in enumerate(ranked)})
+
         cars = []
         for k, i in enumerate(order):
             cid = self.drivers[i]["cls"]
@@ -399,10 +535,15 @@ class Engine:
                 "last": round(last[i], 3) if last[i] > 0 else None,
                 "best": round(best[i], 3) if best[i] > 0 else None,
                 "pit": bool(pitr[i]), "out": i in self._out, "fl": car_flag(cflags[i]), "srf": surf[i],
+                "tc": self.tyres.get(tyre[i], "wet" if tyre[i] > 0 else "dry") if tyre[i] >= 0 else None,
+                "lh": list(self._laps.get(i, ())),
+                # last pit stop: lap, seconds on pit road, still there (pd counts up live)
+                **({"pl": self._pits[i][0], "pd": round(self._pits[i][2] if self._pits[i][2] is not None else t - self._pits[i][1], 1),
+                    "pip": self._pits[i][2] is None} if i in self._pits else {}),
                 "cb": bool(best[i] > 0 and class_best.get(cid) == best[i]),
                 "pb": bool(best[i] > 0 and last[i] > 0 and abs(last[i] - best[i]) < 1e-4),
             }
-            if is_race:
+            if is_race and not pre_green:
                 if ci == 0:
                     c["gl"], c["ld"], c["gi"], c["li"] = None, 0, None, 0
                 else:
@@ -421,7 +562,37 @@ class Engine:
                 c["gi"] = delta(i, g[ci - 1]) if ci else None
                 c["go"] = delta(i, order[0]) if k else None
                 c["gio"] = delta(i, order[k - 1]) if k else None
+            if is_race and overall[i] and i in self._grid:   # positions gained (+) / lost (-) since the start
+                c["pg"], c["pgc"] = self._grid[i] - overall[i], (cgrid[i] - cpos[i]) if i in cgrid and cpos[i] else None
             cars.append(c)
+
+        # estimated iRating change for everyone (race, within each class, at the current positions)
+        ir_gain = None
+        if is_race:
+            byc = {c["i"]: c for c in cars}
+            for g in groups.values():
+                field = [(self.drivers[i]["ir"], cpos[i]) for i in g if cpos.get(i)]
+                for i in g:
+                    if cpos.get(i):
+                        byc[i]["irg"] = ir_change(self.drivers[i]["ir"], cpos[i], field)
+            ir_gain = byc.get(me, {}).get("irg")
+
+        # my lap log (test sessions): fuel is split at the line, the lap time arrives just after
+        my_fuel = raw.get("FuelLevel")
+        if lapc[me] != self._my_lapc:
+            if self._my_lapc is not None and lapc[me] > (self._my_lapc or 0):
+                used = (self._fuel_at_line - my_fuel) if self._fuel_at_line is not None and my_fuel is not None else None
+                self._pending_lap = {"lap": lapc[me], "temp": raw.get("TrackTemp"), "fuel": my_fuel,
+                                     "used": round(used, 3) if used is not None and used >= 0 else None}
+            self._my_lapc, self._fuel_at_line = lapc[me], my_fuel
+        mylast = raw.get("LapLastLapTime")
+        if mylast != self._my_last:
+            pend = getattr(self, "_pending_lap", None)
+            if pend and mylast and mylast > 0:
+                pend["time"] = round(mylast, 3)
+                self._mylaps.appendleft(pend)
+                self._pending_lap = None
+            self._my_last = mylast
 
         # relative: everyone physically near me, by real elapsed time
         rel = []
@@ -485,6 +656,7 @@ class Engine:
             "fog": raw.get("FogLevel"), "skies": raw.get("Skies"),
             "press": raw.get("AirPressure"), "sun": raw.get("SolarAltitude"),
             "tod": raw.get("SessionTimeOfDay"), "declaredWet": bool(raw.get("WeatherDeclaredWet")),
+            "grip": sess.get("SessionTrackRubberState"),   # iRacing gives the rubber state as words
         }
         if raw.get("AirTemp") is not None and t - self._wx_t >= 5.0 or t < self._wx_t:
             self._wx_t = t
@@ -501,7 +673,7 @@ class Engine:
             "type": "state", "connected": True, "t": round(t, 2),
             "session": {
                 "type": stype or "Session", "name": sess.get("SessionName") or stype,
-                "isRace": is_race, "state": int(raw.get("SessionState") or 0),
+                "isRace": is_race, "kind": kind, "state": int(raw.get("SessionState") or 0),
                 "stateName": SESSION_STATE.get(int(raw.get("SessionState") or 0), ""),
                 "flag": flag, "timeRemain": tr,
                 "timeTotal": time_total if time_total < UNLIMITED_TIME else None,
@@ -519,8 +691,11 @@ class Engine:
                 "speed": raw.get("Speed"), "gear": raw.get("Gear"), "rpm": raw.get("RPM"),
                 "pit": bool(raw.get("OnPitRoad")), "inc": raw.get("PlayerCarMyIncidentCount"),
                 "incLimit": self.meta.get("incLimit"),
+                "incPen": self.meta.get("incPen"), "incPenNext": self.meta.get("incPenNext"), "incDq": self.meta.get("incDq"),
+                "irGain": ir_gain, "laps": list(self._mylaps),
             },
             "cars": cars, "rel": rel, "fuel": fuel, "wx": wx,
+            "talk": talk if talk is not None and talk >= 0 else None,   # car on the radio right now
             "map": {"status": self.mapper.status, "progress": round(self.mapper.progress, 3),
                     "ver": self.mapper.version},
         }

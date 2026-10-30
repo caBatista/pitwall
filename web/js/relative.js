@@ -1,20 +1,10 @@
-import { esc, prefs, savePrefs, flagHtml, makeHtml } from './util.js';
+import { esc, flagHtml, makeHtml, stHtml, talkHtml, OUT, flagFx, irHtml, pitHtml } from './util.js';
 
-// status chip after the name (and after OUT): the most serious flag wins
-const ST = {
-  dq: '<span class="st dq">DQ</span>',
-  black: '<span class="st black" title="Black flag"><i></i></span>',
-  repair: '<span class="st repair" title="Meatball (repair)"><i></i></span>',
-  warn: '<span class="st warn" title="Warning"><i></i></span>',
-  pit: '<span class="st pit">PIT</span>',
-};
-const stHtml = (c) => ST[c.fl] || (c.pit ? ST.pit : '');
 // lap time with one decimal: 211.827 -> 3:31.8
 const lap1 = (x) => {
   const t = Math.round(x * 10) / 10, m = Math.floor(t / 60);
   return `${m}:${(t - m * 60).toFixed(1).padStart(4, '0')}`;
 };
-const OUT = '<span class="tag out">OUT</span>';
 
 /**
  * Relative: everybody near you on track, ordered by track position, with the
@@ -30,16 +20,11 @@ export const relative = {
     root.innerHTML = `
       <div class="card-h">
         <div class="ttl"><i></i>Relative</div>
-        <div class="ctl"><div class="seg" id="rl-rows">
-          ${[3, 4, 5, 6].map((n) => `<button data-n="${n}">${n}</button>`).join('')}</div></div>
       </div>
       <div class="rel-body" id="rl-body"></div>`;
     this.body = root.querySelector('#rl-body');
-    this.rows = root.querySelector('#rl-rows');
     this.last = '';
     root.addEventListener('click', (e) => {
-      const b = e.target.closest('[data-n]');
-      if (b) { prefs.relRows = Number(b.dataset.n); savePrefs(); this.last = ''; return; }
       const r = e.target.closest('.rrow[data-i]');
       if (r) { const i = Number(r.dataset.i); S.sel = S.sel === i ? null : i; this.last = ''; }
     });
@@ -48,8 +33,7 @@ export const relative = {
   update(S) {
     const st = S.st;
     if (!st) return;
-    const n = prefs.relRows;
-    this.rows.querySelectorAll('button').forEach((b) => b.classList.toggle('on', Number(b.dataset.n) === n));
+    const n = 3;   // 3 ahead, 3 behind
 
     const cars = new Map(st.cars.map((c) => [c.i, c]));
     const ahead = st.rel.filter((r) => r.dt >= 0).slice(-n);   // nearest n ahead (list is far→near)
@@ -67,7 +51,7 @@ export const relative = {
         ${flagHtml(d.country)}
         <div class="rname"><span class="nm">${esc(d.name)}</span>${extra}</div>
         <div class="sr" style="--lc:${d.licColor}">${lic ? `<b>${esc((sr || '').slice(0, 3))}</b><i>${esc(lic)}</i>` : ''}</div>
-        <div class="irb">${d.ir ? `<b>${d.ir >= 1000 ? (d.ir / 1000).toFixed(1) + 'k' : d.ir}</b>` : ''}</div>
+        <div class="irb">${irHtml(d.ir, c.irg)}</div>
         <div class="rlast">${best}</div>`;
     };
 
@@ -80,12 +64,13 @@ export const relative = {
       // no sign: the row order already says ahead/behind; 92.0 -> 1:32.0
       const tr = Math.round(t * 10) / 10;   // round first so 119.97 is 2:00.0, not 1:60.0
       const txt = tr >= 60 ? `${Math.floor(tr / 60)}:${(tr % 60).toFixed(1).padStart(4, '0')}` : tr.toFixed(1);
+      const c = cars.get(r.i) || r;
       return `<div class="rrow ${r.dl > 0 ? 'up' : r.dl < 0 ? 'down' : ''} ${r.pit ? 'pitrow' : ''} ${S.sel === r.i ? 'sel' : ''}" data-i="${r.i}">
-        ${cells(r.i, d, (r.out ? OUT : lap) + stHtml(cars.get(r.i) || r))}<div class="rt ${side}">${txt}</div></div>`;
+        ${cells(r.i, d, (r.out ? OUT : lap) + pitHtml(c, st.session?.kind) + `<span class="fxw" style="${flagFx('r' + r.i, c.fl)}">${stHtml(c)}</span>` + talkHtml(st.talk === r.i))}<div class="rt ${side}">${txt}</div></div>`;
     };
 
     const md = S.drivers[st.me.i];
-    const meRow = md ? `<div class="rrow me">${cells(st.me.i, md, (cars.get(st.me.i)?.out ? OUT : '') + stHtml(cars.get(st.me.i) || {}))}<div class="rt">–</div></div>` : '<div class="rrow empty"></div>';
+    const meRow = md ? `<div class="rrow me">${cells(st.me.i, md, (cars.get(st.me.i)?.out ? OUT : '') + pitHtml(cars.get(st.me.i), st.session?.kind) + `<span class="fxw" style="${flagFx('r' + st.me.i, cars.get(st.me.i)?.fl)}">${stHtml(cars.get(st.me.i) || {})}</span>` + talkHtml(st.talk === st.me.i))}<div class="rt">–</div></div>` : '<div class="rrow empty"></div>';
 
     // ahead is ordered far → near already; pad on top so the layout never jumps
     const a = [...Array(Math.max(0, n - ahead.length)).fill(null), ...ahead];

@@ -13,7 +13,7 @@ export function lapTime(s) {
 
 /** "+1.23", "+12.4", "+1:02.3", "+2L" */
 export function gapText(sec, laps, signed = true) {
-  if (laps > 0) return `+${laps}L`;
+  if (laps > 0) return `${signed ? '+' : ''}${laps}L`;
   if (sec == null) return '–';
   const sg = signed ? '+' : '';
   if (sec >= 60) {
@@ -47,7 +47,10 @@ const norm = (s) => String(s).toLowerCase().replace(/&/g, 'and').replace(/[^a-z]
 // deprecated/aliased codes the browser still names ("DD" is also "Germany")
 const OLD_CODES = new Set(['BU', 'CS', 'DD', 'FX', 'NT', 'QO', 'SU', 'TP', 'UK', 'YU', 'ZR', 'EU', 'EZ', 'UN']);
 const ISO = (() => {
-  const map = { england: 'gb-eng', scotland: 'gb-sct', wales: 'gb-wls', northernireland: 'gb-nir', usa: 'us', russia: 'ru', turkey: 'tr' };
+  // iRacing names that differ from the browser's region names ("Hong Kong" vs "Hong Kong SAR China")
+  const map = { england: 'gb-eng', scotland: 'gb-sct', wales: 'gb-wls', northernireland: 'gb-nir', usa: 'us', russia: 'ru', turkey: 'tr',
+    hongkong: 'hk', macau: 'mo', macao: 'mo', unitedstatesofamerica: 'us', greatbritain: 'gb', czechrepublic: 'cz',
+    southkorea: 'kr', korea: 'kr', taiwan: 'tw', vietnam: 'vn', ivorycoast: 'ci', palestine: 'ps', bosnia: 'ba' };
   try {
     const dn = new Intl.DisplayNames(['en'], { type: 'region' });
     for (let a = 65; a <= 90; a++) {
@@ -134,6 +137,69 @@ export function makeHtml(make) {
   if (LOCAL.get(make)) return `<img class="make-img" src="${LOCAL.get(make)}" alt="${esc(make)}">`;
   if (NO_ICON.has(make)) return `<i class="make-i txt">${esc((make || '').slice(0, 3).toUpperCase())}</i>`;
   return `<i class="make-i" title="${esc(make)}" style="--icon:url(${ICON_CDN}${make}.svg)"></i>`;
+}
+
+// ---- status tags (relative + standings) --------------------------------------
+// small inline icons, coloured through CSS (currentColor)
+const WATCH = '<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6.8" r="4.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 4.6v2.4l1.4 1M4.8 1.4h2.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+const MIC = '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="4.2" y="1" width="3.6" height="6.2" rx="1.8" fill="currentColor"/><path d="M2.6 5.6a3.4 3.4 0 0 0 6.8 0M6 9v2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
+// the most serious flag wins: DQ > black > meatball > slow down (furled) [> PIT > class fastest]
+const ST = {
+  dq: '<span class="st dq">DQ</span>',
+  black: '<span class="st black" title="Black flag"><i></i></span>',
+  repair: '<span class="st repair" title="Meatball (repair)"><i></i></span>',
+  warn: `<span class="st warn" title="Slow down"><i>${WATCH}</i></span>`,
+  pit: '<span class="st pit">PIT</span>',
+  fast: `<span class="st fast" title="Fastest lap in class">${WATCH}</span>`,
+};
+// relative: flags only; standings: flags, then PIT, then the class fastest lap
+export const stHtml = (c, full = false) => ST[c.fl] || (full ? (c.pit ? ST.pit : c.cb ? ST.fast : '') : '');
+// on the radio: strong green, pulsing (computed per frame: rows are re-rendered all the time)
+export const talkHtml = (on) => {
+  if (!on) return '';
+  const k = (Math.sin(performance.now() / 160) + 1) / 2;
+  return `<span class="st talk" title="On the radio" style="transform:scale(${(1 + 0.14 * k).toFixed(3)});box-shadow:0 0 ${(4 + 8 * k).toFixed(1)}px ${(1 + 2 * k).toFixed(1)}px rgba(0,214,90,${(0.35 + 0.4 * k).toFixed(2)})">${MIC}</span>`;
+};
+// iRating chip, with the estimated gain/loss of this race next to it (green up / red down)
+export function irHtml(ir, gain) {
+  if (!ir) return '';
+  const v = ir >= 1000 ? (ir / 1000).toFixed(1) + 'k' : ir;
+  const g = gain ? `<em class="${gain > 0 ? 'up' : 'down'}">${gain > 0 ? '▲' : '▼'}${Math.abs(gain)}</em>` : '';
+  return `<b>${v}${g}</b>`;
+}
+export const OUT = '<span class="tag out">OUT</span>';
+
+// last pit stop, RaceLab style: amber "L12" (lap of the stop) + time on pit road, outlined.
+// The time blinks while the car is still in the pits (rows re-render every frame: computed, not CSS).
+// PIT_ALL: shown in every session for testing; set false to show it in races only.
+export const PIT_ALL = true;
+export function pitHtml(c, kind) {
+  if (!c || c.pl == null || (!PIT_ALL && kind !== 'race')) return '';
+  const s = Math.max(0, Math.floor(c.pd || 0));
+  // in the pits: only the time blinks, filled <-> outlined, once a second
+  const fill = c.pip && Math.floor(performance.now() / 1000) % 2 === 0;
+  const time = s >= 100 * 60 ? '∞' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  return `<span class="pitl"><b>L${c.pl}</b><i${fill ? ' class="on"' : ''}>${time}</i></span>`;
+}
+
+// tyre in the RaceLab way: a little Michelin-style tyre, white sidewall marks dry, blue wet
+export function tyreHtml(tc) {
+  if (!tc) return '';
+  return `<svg class="tyre ${tc}" viewBox="0 0 20 20" aria-label="${tc === 'wet' ? 'Wet' : 'Dry'} tyres"><circle cx="10" cy="10" r="9" fill="#0b0b0c" stroke="#3a3a3e" stroke-width="1.5"/><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="6.4 3"/><circle cx="10" cy="10" r="2.6" fill="#2a2a2d"/></svg>`;
+}
+
+// helmet for the class driver count
+export const HELMET = '<svg class="helmet" viewBox="0 0 14 12" aria-hidden="true"><path d="M1 8.5C1 4.4 3.9 1.2 7.6 1.2c3 0 5.4 2.1 5.4 5.2v2.1H8.2l-.9 1.7H2.4C1.6 10.2 1 9.5 1 8.5Z" fill="currentColor"/><path d="M7.4 4.2h5.3v2.4H7.4z" fill="#111112"/></svg>';
+
+// ---- change effects (rows are re-rendered every frame, so the fade is computed, not a CSS animation)
+const FX = new Map();   // key -> {v: last value, t: when it changed}
+const FX_FLAG = 1400;
+// new flag on a car: the chip pops in (big, then settles)
+export function flagFx(key, fl) {
+  const now = performance.now(), f = FX.get('f' + key);
+  if (!f || fl !== f.v) FX.set('f' + key, { v: fl, t: fl && f ? now : 0 });
+  const g = FX.get('f' + key), k = 1 - (now - g.t) / FX_FLAG;
+  return g.t && k > 0 ? `transform:scale(${(1 + 0.6 * k * k).toFixed(3)})` : '';
 }
 
 // ---- preferences & units --------------------------------------------------

@@ -27,6 +27,7 @@ export const weather = {
       <div class="kv"><small>Rain</small><b id="wx-pr">–</b></div>
       <div class="kv"><small>Humidity · Fog</small><b id="wx-hu">–</b></div>
       <div class="kv"><small>Skies</small><b id="wx-sk" style="font-size:13px">–</b></div>
+      <div class="kv"><small>Grip</small><b id="wx-gr" style="font-size:13px">–</b></div>
       <div class="kv"><small>Pressure · Time</small><b id="wx-pt" style="font-size:13px">–</b></div>
       <div class="wx-chart"><canvas id="wx-cv"></canvas></div>`;
     const q = (s) => root.querySelector(s);
@@ -81,6 +82,8 @@ export const weather = {
     q('#wx-pr').innerHTML = pr == null ? '–' : pr > 0.02 ? `<span style="color:var(--txt)">${(pr * 100).toFixed(0)}%</span>` : '<span style="color:var(--dim)">None</span>';
     q('#wx-hu').textContent = `${w.hum == null ? '–' : Math.round(w.hum * 100) + '%'} · ${w.fog ? Math.round(w.fog * 100) + '%' : '0%'}`;
     q('#wx-sk').textContent = w.skies == null ? '–' : SKIES[w.skies] || '–';
+    // rubber on the racing line, as iRacing words it ("slight usage", "moderate usage", ...)
+    q('#wx-gr').textContent = w.grip ? w.grip[0].toUpperCase() + w.grip.slice(1) : '–';
     const p = fmt.press(w.press);
     q('#wx-pt').textContent = `${p == null ? '–' : p.toFixed(fmt.pressU() === 'hPa' ? 0 : 2) + ' ' + fmt.pressU()} · ${tod(w.tod)}`;
 
@@ -108,7 +111,7 @@ export const weather = {
     });
     const line = (arr, col) => { c.beginPath(); arr.forEach((v, k) => (k ? c.lineTo(x(k), y(v)) : c.moveTo(x(k), y(v)))); c.strokeStyle = col; c.lineWidth = 1.8; c.lineJoin = 'round'; c.stroke(); };
     line(ai, '#f4f2ec'); line(tr, '#f4b400');
-    c.font = '600 9.5px Geist Mono, monospace'; c.fillStyle = '#8a8a8f'; c.textAlign = 'left';
+    c.font = '600 10px Montserrat, sans-serif'; c.fillStyle = '#8a8a8f'; c.textAlign = 'left';
     c.fillText(hi.toFixed(0), 2, 9); c.fillText(lo.toFixed(0), 2, H - 1);
   },
 };

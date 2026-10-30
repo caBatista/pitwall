@@ -1,9 +1,10 @@
-import { prefs, savePrefs, clock, fmt, esc } from './util.js';
+import { prefs, savePrefs, clock } from './util.js';
 import { standings } from './standings.js';
 import { relative } from './relative.js';
 import { trackmap } from './map.js';
 import { fuel } from './fuel.js';
 import { weather } from './weather.js';
+import { laplog } from './laplog.js';
 
 const params = new URLSearchParams(location.search);
 if (params.get('bg') === 'transparent') document.body.classList.add('transparent');
@@ -23,7 +24,7 @@ const S = {
 };
 
 // ---- widgets -----------------------------------------------------------------
-const ALL = { standings, relative, map: trackmap, fuel, weather };
+const ALL = { standings, relative, map: trackmap, fuel, weather, laplog };
 const want = (params.get('w') || 'standings,relative,map,fuel,weather').split(',').map((s) => s.trim()).filter((k) => ALL[k]);
 const board = document.getElementById('board');
 const mk = (w) => {
@@ -38,7 +39,7 @@ if (params.get('w')) {
   for (const k of want) { const el = mk(ALL[k]); board.appendChild(el); widgets.push([ALL[k], el]); }
 } else {
   const bottom = document.createElement('div'); bottom.className = 'col-bottom';
-  for (const k of ['standings', 'relative', 'map']) { const el = mk(ALL[k]); board.appendChild(el); widgets.push([ALL[k], el]); }
+  for (const k of ['standings', 'laplog', 'relative', 'map']) { const el = mk(ALL[k]); board.appendChild(el); widgets.push([ALL[k], el]); }
   for (const k of ['fuel', 'weather']) { const el = mk(ALL[k]); bottom.appendChild(el); widgets.push([ALL[k], el]); }
   board.appendChild(bottom);
 }
@@ -57,6 +58,8 @@ const on = new Set(widgets.map(([w]) => w));
 setZoom(Number(params.get('zoom')) || prefs.zoom);
 addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.('input')) return;
+  // desktop app (pywebview): F11 toggles full screen of the native window
+  if (e.key === 'F11' && window.pywebview?.api) { e.preventDefault(); window.pywebview.api.fullscreen(); return; }
   const step = { '+': 0.05, '=': 0.05, '-': -0.05 }[e.key];
   if (step) prefs.zoom = setZoom(prefs.zoom + step);
   else if (e.key === '0') prefs.zoom = setZoom(1.1);
@@ -64,21 +67,24 @@ addEventListener('keydown', (e) => {
   savePrefs();
 });
 
+// ---- desktop app: hidden full-screen toggle in the top-right corner (only inside pywebview)
+addEventListener('pywebviewready', () => {
+  document.body.classList.add('desktop');
+  $('fs-btn').addEventListener('click', () => window.pywebview.api.fullscreen());
+});
+
 // ---- header ---------------------------------------------------------------------
 const $ = (id) => document.getElementById(id);
 const el = {
-  name: $('trk-name'), sub: $('trk-sub'), type: $('sess-type'), flag: $('flag'),
-  clk: $('clock-main'), clkSub: $('clock-sub'), mini: $('mini'), units: $('units-btn'),
+  name: $('trk-name'), sub: $('trk-sub'), series: $('series'), sof: $('sof'),
+  clk: $('clock-main'), clkSub: $('clock-sub'),
   conn: $('conn'), ov: $('overlay'), ovT: $('ov-title'), ovP: $('ov-text'),
 };
-el.units.textContent = prefs.units.toUpperCase();
-el.units.addEventListener('click', () => {
-  prefs.units = prefs.units === 'metric' ? 'imperial' : 'metric';
-  el.units.textContent = prefs.units.toUpperCase(); savePrefs(); dirty = true; slow = 0;
-});
 
-const FLAGS = { green: 'Green', yellow: 'Yellow', caution: 'Caution', red: 'Red', white: 'White', blue: 'Blue', black: 'Black', checkered: 'Finish' };
-let hdrKey = '';
+// iRacing only gives the series id: names come from web/series.json ({"228": "GT Sprint Series"})
+let SERIES = {};
+fetch('/series.json').then((r) => (r.ok ? r.json() : {})).then((j) => { SERIES = j || {}; }).catch(() => {});
+
 function header() {
   const st = S.st, m = S.meta;
   if (m.track) {
@@ -86,21 +92,17 @@ function header() {
     const bits = [m.config, m.lengthKm ? (prefs.units === 'imperial' ? (m.lengthKm * 0.621371).toFixed(2) + ' mi' : m.lengthKm.toFixed(2) + ' km') : '', m.turns ? m.turns + ' turns' : ''].filter(Boolean);
     el.sub.textContent = bits.join(' · ');
   }
+  const series = SERIES[m.seriesId] || '';
+  if (el.series.textContent !== series) el.series.textContent = series;
+  el.series.hidden = !series;
+  el.sof.textContent = m.sof || '–';
   if (!st || !st.session) return;
   const s = st.session;
-  el.type.textContent = s.name || s.type;
-  const f = (s.flag || 'none').toLowerCase();
-  const fk = f === 'caution' ? 'yellow' : f;
-  el.flag.className = 'flag ' + (FLAGS[f] ? fk : 'none');
-  el.flag.textContent = FLAGS[f] || '';
+  el.sof.parentElement.hidden = s.kind === 'test';   // no field to rate in a test session
   const rem = s.timeRemain;
   el.clk.textContent = clock(rem != null ? rem : st.t);
   const laps = s.lapsTotal && st.me.lap != null ? `Lap ${st.me.lap}/${s.lapsTotal}` : st.me.lap != null ? `Lap ${st.me.lap}` : '';
-  el.clkSub.textContent = [rem != null ? 'Remaining' : 'Elapsed', laps].filter(Boolean).join(' · ');
-  const sp = fmt.speed(st.me.speed), gear = st.me.gear;
-  const mini = `<span class="chip">Speed <b>${sp == null ? '–' : sp.toFixed(0)}</b>${fmt.speedU()}</span>` +
-    `<span class="chip">Gear <b>${gear == null ? '–' : gear < 0 ? 'R' : gear === 0 ? 'N' : gear}</b></span>`;
-  if (mini !== hdrKey) { el.mini.innerHTML = mini; hdrKey = mini; }
+  el.clkSub.textContent = [s.name || s.type, rem != null ? 'Remaining' : 'Elapsed', laps].filter(Boolean).join(' · ');
 }
 
 function status() {
@@ -126,13 +128,16 @@ function connect() {
       case 'drivers':
         S.drivers = m.drivers; S.meta = m.meta || {}; S.classes = m.classes || [];
         S.classMap = new Map(S.classes.map((c) => [c.id, c]));
-        hdrKey = ''; slow = 0; dirty = true; break;
+        slow = 0; dirty = true; break;
       case 'track': S.track = m.points ? m : null; if (!m.points && S.st) S.track = null; break;
       case 'wx': S.wxHist = m.hist || []; break;
       case 'state':
         S.connected = m.connected !== false;
         if (m.connected === false) { S.st = null; status(); return; }
-        S.st = m; dirty = true; break;
+        S.st = m; dirty = true;
+        // what the board shows depends on the session (see body[data-kind] in app.css)
+        if (m.session && document.body.dataset.kind !== m.session.kind) document.body.dataset.kind = m.session.kind;
+        break;
     }
   };
 }
@@ -142,7 +147,7 @@ connect();
 // only the mounted widgets: with ?w= the others never ran mount()
 let slow = 0;
 const fast = [standings, relative, trackmap].filter((w) => on.has(w));
-const slowW = [fuel, weather].filter((w) => on.has(w));
+const slowW = [fuel, weather, laplog].filter((w) => on.has(w));
 function frame(now) {
   if (dirty && S.st) {
     dirty = false;

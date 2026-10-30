@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -10,7 +11,9 @@ from aiohttp import WSMsgType, web
 
 from .engine import Engine
 
-WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+# inside the PyInstaller .exe the bundled files live under sys._MEIPASS
+BUNDLE = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+WEB_DIR = BUNDLE / "web"
 
 
 def dumps(obj) -> str:

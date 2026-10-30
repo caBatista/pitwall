@@ -18,7 +18,7 @@ SCALARS = [
     "SessionTime", "SessionNum", "SessionState", "SessionFlags",
     "SessionTimeRemain", "SessionLapsRemainEx", "SessionLapsTotal",
     "SessionTimeTotal", "SessionTimeOfDay", "SessionInfoUpdate",
-    "PlayerCarIdx", "IsOnTrack", "OnPitRoad", "Lap", "LapCompleted",
+    "PlayerCarIdx", "IsOnTrack", "OnPitRoad", "Lap", "LapCompleted", "RadioTransmitCarIdx",
     "LapDistPct", "LapDeltaToBestLap", "LapDeltaToBestLap_OK",
     "LapBestLapTime", "LapLastLapTime", "LapCurrentLapTime",
     "Speed", "Gear", "RPM", "FuelLevel", "FuelLevelPct", "FuelUsePerHour",
@@ -31,7 +31,7 @@ SCALARS = [
 CAR_ARRAYS = [
     "CarIdxLapCompleted", "CarIdxLapDistPct", "CarIdxTrackSurface",
     "CarIdxOnPitRoad", "CarIdxPosition", "CarIdxClassPosition",
-    "CarIdxLastLapTime", "CarIdxBestLapTime", "CarIdxEstTime", "CarIdxSessionFlags",
+    "CarIdxLastLapTime", "CarIdxBestLapTime", "CarIdxEstTime", "CarIdxSessionFlags", "CarIdxTireCompound",
 ]
 
 
@@ -80,7 +80,7 @@ class IRacingSource:
             return None
         self._info_tick = tick
         info = {}
-        for key in ("WeekendInfo", "DriverInfo", "SessionInfo"):
+        for key in ("WeekendInfo", "DriverInfo", "SessionInfo", "SplitTimeInfo", "QualifyResultsInfo"):
             try:
                 info[key] = self.ir[key]
             except Exception:  # noqa: BLE001
@@ -110,9 +110,11 @@ _CLASSES = [
 class MockSource:
     name = "simulator"
 
-    def __init__(self, speed: float = 4.0, seed: int = 11):
+    def __init__(self, speed: float = 4.0, seed: int = 11, session: str = "Race", track_id: int = 9999):
         self.speed = max(0.1, speed)
         self.seed = seed
+        self.track_id = track_id   # a real TrackID makes the map come from maps/library
+        self.session = session   # iRacing SessionType to pretend: Race / Open Qualify / Practice / Offline Testing
         self._reset()
 
     # ---- construction ------------------------------------------------------
@@ -241,16 +243,20 @@ class MockSource:
         drivers.append({"CarIdx": 63, "UserName": "Pace Car", "CarIsPaceCar": 1, "CarClassID": 0})
         return {
             "WeekendInfo": {
-                "TrackID": 9999, "TrackName": "pitwall test", "TrackDisplayName": "Pitwall Test Circuit",
+                "TrackID": self.track_id, "TrackName": "pitwall test", "TrackDisplayName": "Pitwall Test Circuit",
                 "TrackConfigName": "Grand Prix", "TrackLength": "5.40 km", "TrackNumTurns": 16,
-                "Category": "SportsCar", "WeekendOptions": {"IncidentLimit": 25},
+                "Category": "SportsCar", "SeriesID": 0,
+                "WeekendOptions": {"IncidentLimit": 25, "IncidentWarningInitialLimit": 17, "IncidentWarningSubsequentLimit": 8},
             },
+            "SplitTimeInfo": {"Sectors": [{"SectorNum": 0, "SectorStartPct": 0.0}, {"SectorNum": 1, "SectorStartPct": 0.34},
+                                          {"SectorNum": 2, "SectorStartPct": 0.68}]},
             "DriverInfo": {
                 "DriverCarIdx": 0, "DriverCarFuelMaxLtr": 110.0, "DriverCarMaxFuelPct": 1.0,
                 "DriverCarEstLapTime": 100.0, "Drivers": drivers,
             },
             "SessionInfo": {"Sessions": [
-                {"SessionNum": 0, "SessionType": "Race", "SessionName": "RACE",
+                {"SessionNum": 0, "SessionType": self.session, "SessionName": self.session.upper(),
+                 "SessionTrackRubberState": "moderate usage",
                  "SessionLaps": "unlimited", "SessionTime": f"{self.race_len:.4f} sec"},
             ]},
         }

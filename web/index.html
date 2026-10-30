@@ -14,26 +14,21 @@
 <div class="app" id="app">
   <header class="top">
     <div class="brand"><img class="logo" src="/img/cb-sprint-amber.svg" alt=""><b>PITWALL</b></div>
+    <div class="series" id="series"></div>
     <div class="trk">
       <div class="trk-name" id="trk-name">Waiting for iRacing…</div>
       <div class="trk-sub" id="trk-sub"></div>
-    </div>
-    <div class="sess">
-      <span class="pill" id="sess-type">—</span>
-      <span class="flag none" id="flag">—</span>
     </div>
     <div class="clock">
       <div class="clock-main" id="clock-main">--:--:--</div>
       <div class="clock-sub" id="clock-sub"></div>
     </div>
     <div class="spacer"></div>
-    <div class="mini" id="mini"></div>
-    <div class="tools">
-      <button class="seg-btn" id="units-btn" title="Units">METRIC</button>
-      <span class="conn" id="conn" title="Connection"><i></i><em>offline</em></span>
-    </div>
+    <div class="hstat"><small>SOF</small><b id="sof">–</b></div>
+    <span class="conn" id="conn" title="Connection"><i></i><em>offline</em></span>
   </header>
   <main class="board" id="board"></main>
+  <button class="fs-btn" id="fs-btn" title="Full screen" aria-label="Toggle full screen"></button>
   <div class="overlay" id="overlay">
     <div class="ov-card">
       <div class="ov-ring"></div>

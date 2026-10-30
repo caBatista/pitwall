@@ -3,6 +3,13 @@ __pycache__/
 *.pyc
 maps/
 *.zip
+changes.md
 
 # brand logos are trademarks: kept local, not published
 web/img/makes/*.png
+
+# build output
+build/
+dist/
+*.spec
+window.json
