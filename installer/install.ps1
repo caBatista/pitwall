@@ -25,7 +25,11 @@ if ($Uninstall) {
 if (-not (Test-Path "$src\$app.exe")) { throw "Build first: $src\$app.exe not found (run build.bat)." }
 
 # copy the app (fresh folder, so files removed from a build don't linger)
-if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+# Windows may hold the files of a just-closed app for a moment: retry for a few seconds
+for ($try = 0; (Test-Path $dest) -and $try -lt 10; $try++) {
+    try { Remove-Item $dest -Recurse -Force -ErrorAction Stop } catch { Start-Sleep -Milliseconds 500 }
+}
+if (Test-Path $dest) { throw "Could not replace $dest (is Pitwall still open?)" }
 New-Item -ItemType Directory -Force $dest | Out-Null
 Copy-Item "$src\*" $dest -Recurse -Force
 Copy-Item $PSCommandPath (Join-Path $dest 'uninstall.ps1') -Force   # this script doubles as the uninstaller

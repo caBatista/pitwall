@@ -101,6 +101,9 @@ body[data-kind="test"] #w-laplog { display: flex; }
 body[data-kind="qualify"] .board:not(.solo), body[data-kind="test"] .board:not(.solo) {
   grid-template-areas: "standings map" "standings map" "standings bottom";
 }
+/* race over: the standings as the results (see .srow.over), next to the track map */
+body[data-over] .board > :not(#w-standings, #w-map) { display: none; }
+body[data-over] .board:not(.solo) { grid-template-columns: minmax(620px, 1fr) 1fr; grid-template-rows: 1fr; grid-template-areas: "standings map"; }
 .board.solo { grid-template-columns: 1fr; grid-template-rows: 1fr; grid-template-areas: none; }
 .board.solo > * { grid-area: auto !important; }
 
@@ -133,9 +136,11 @@ body.transparent .card { background: rgba(17, 17, 18, .82); backdrop-filter: blu
    pos | [class # make] | country | name [OUT] | SR | iR | tyre | int | gap | last | fastest | Δ1 Δ2 Δ3 | [radio][flag] */
 .srow, .rrow.srow {   /* .rrow.srow: beat the relative's own .rrow grid, defined further down */
   display: grid; align-items: center; column-gap: 6px;
-  grid-template-columns: 34px 106px 22px minmax(110px, 1fr) 52px 74px 26px 58px 58px 70px 70px 38px 38px 38px 54px;
+  grid-template-columns: 34px 106px 22px minmax(110px, 1fr) 52px 84px 26px 58px 58px 70px 70px 38px 38px 38px 54px;
 }
 .rrow.srow { padding: 0 6px 0 0; cursor: pointer; }
+/* race over: pos | [class # make] | country | name | SR | iR | fastest | fastest-lap tag */
+.srow.over, .rrow.srow.over { grid-template-columns: 34px 106px 22px minmax(110px, 1fr) 52px 84px 80px 54px; }
 .s-head .c, .srow .c { text-align: center; }
 .ghead .r { text-align: right; }
 .ghead .dhead { grid-column: span 3; }
@@ -196,7 +201,7 @@ svg.tyre.wet { color: var(--blue); }
 .rel-body { margin: 0 8px 10px; border-radius: 6px; overflow: hidden; }  /* rounded as a block, rows are square */
 /* pos | [class # make] | flag | name [OUT][status] | SR | iRating | best lap | relative */
 .rrow {
-  display: grid; grid-template-columns: 34px 86px 22px minmax(90px, 1fr) 56px 74px 60px 58px; align-items: center; column-gap: 8px;
+  display: grid; grid-template-columns: 34px 86px 22px minmax(90px, 1fr) 56px 84px 60px 58px; align-items: center; column-gap: 8px;
   height: 34px; padding: 0 8px 0 0; position: relative; overflow: hidden;
 }
 .rrow:hover { background: rgba(255, 255, 255, .035); }
@@ -212,15 +217,16 @@ svg.tyre.wet { color: var(--blue); }
 .rrow .rpos, .rcar { align-self: stretch; }
 .rrow .rpos {
   display: grid; place-items: center; padding-right: 4px; background: var(--card-2);
-  font: 600 16px/1 var(--num); font-variant-numeric: tabular-nums; clip-path: polygon(0 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
+  font: 600 15px/1 var(--num); font-variant-numeric: tabular-nums; clip-path: polygon(0 0, 100% 0, calc(100% - 7px) 100%, 0 100%);   /* a touch bigger than the rest */
 }
 .rcar { display: flex; margin-left: -15px; }  /* -(column-gap + 7px slant): the cuts meet with no gap */
 .rcar .rn {
   display: grid; place-items: center; min-width: 46px; padding: 0 8px 0 14px;
   background:
     linear-gradient(102deg, transparent 0 10px, rgba(0, 0, 0, .45) 10px, transparent 18px),  /* the stripe casts a shadow into the wash */
-    linear-gradient(102deg, var(--cc) 0 10px, color-mix(in srgb, var(--cc) 40%, transparent) 10px, transparent);
-  font: 600 14px/1 var(--num); font-variant-numeric: tabular-nums; color: var(--txt);
+    linear-gradient(102deg, var(--cc) 0 10px, color-mix(in srgb, var(--cc) 40%, transparent) 10px, transparent),
+    var(--rn-under, none);   /* lapped row: an opaque base so the wash keeps its colour and fades into the red/blue */
+  font: 600 13px/1 var(--num); font-variant-numeric: tabular-nums; color: var(--txt);   /* same size as the name */
   clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
 }
 .rcar .mk { flex: 1; display: grid; place-items: center; }
@@ -269,13 +275,20 @@ svg.tyre.wet { color: var(--blue); }
 .sr i { padding: 3px 5px; font-style: normal; background: var(--lc); color: var(--ink); }
 .irb { text-align: right; }
 .irb b { display: inline-flex; align-items: baseline; gap: 4px; padding: 3px 5px; border-radius: 3px; background: var(--card-2); color: var(--txt); font: 600 11px/1 var(--num); font-variant-numeric: tabular-nums; }
-.irb em { font-style: normal; font-size: 10px; }   /* estimated iRating change */
+.irb b span { display: inline-block; min-width: var(--irv, 0); text-align: right; }   /* widest of the session (fitIr) */
+/* estimated iRating change: arrow always in the same place, number right-aligned in 3 digits */
+.irb em { display: inline-flex; align-items: baseline; font-style: normal; font-size: 10px; color: var(--txt); }
+.irb em i { font-style: normal; width: 1.3em; text-align: center; }
+.irb em { min-width: var(--irg, 0); justify-content: space-between; }
 .irb em.up { color: var(--green); }
 .irb em.down { color: var(--red); }
 .make-img { display: block; width: 18px; height: 18px; object-fit: contain; }
-/* lapped / lapping (race): the part right of the class wash gets the colour as background */
-.rrow.up { background: linear-gradient(90deg, transparent 112px, rgba(255, 90, 90, .32) 112px); }
-.rrow.down { background: linear-gradient(90deg, transparent 112px, rgba(106, 168, 255, .32) 112px); }
+/* lapped / lapping (race): the colour starts right where the car number block does (27px = pos
+   column 34 + gap 8 - 15 overlap) and runs behind the make logo, so the number's class wash fades
+   into red/blue instead of into the row */
+.rrow.up, .rrow.down { --rn-under: linear-gradient(102deg, var(--card) 0 30%, transparent); }
+.rrow.up { background: linear-gradient(90deg, transparent 27px, rgba(255, 90, 90, .32) 27px); }
+.rrow.down { background: linear-gradient(90deg, transparent 27px, rgba(106, 168, 255, .32) 27px); }
 .rrow.empty { opacity: .0; }
 .rrow.sel { background: rgba(244, 242, 236, .07); }
 .rrow.pitrow { opacity: .6; }
@@ -288,8 +301,7 @@ svg.tyre.wet { color: var(--blue); }
 }
 .rrow.me .rt { color: var(--accent); }
 .lapt { display: inline-block; padding: 1px 6px; border-radius: 5px; font: 700 10px var(--mono); }
-.lapt.up { color: var(--red); background: rgba(255, 90, 90, .12); border: 1px solid rgba(255, 90, 90, .35); }
-.lapt.down { color: var(--blue); background: rgba(106, 168, 255, .12); border: 1px solid rgba(106, 168, 255, .35); }
+.lapt.up, .lapt.down { color: var(--txt); background: transparent; border: 1px solid var(--txt); }   /* on the red/blue row */
 
 /* ---------- map ---------- */
 .map-wrap { position: relative; flex: 1; min-height: 0; }
@@ -378,3 +390,7 @@ svg.tyre.wet { color: var(--blue); }
   .s-body { overflow-x: auto; }
   .srow { min-width: 860px; }
 }
+
+/* invalidated lap / incident in the lap: asterisk after the time (amber, out of the digit flow) */
+sup.inv { color: var(--accent); font-size: .8em; line-height: 0; margin-left: 1px; vertical-align: .35em; }
+.me-bar .kv b .of { color: var(--dim); font-size: .7em; margin-left: 3px; }

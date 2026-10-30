@@ -137,6 +137,8 @@ function connect() {
         S.st = m; dirty = true;
         // what the board shows depends on the session (see body[data-kind] in app.css)
         if (m.session && document.body.dataset.kind !== m.session.kind) document.body.dataset.kind = m.session.kind;
+        // race over: the board becomes the results (standings only)
+        if (m.session) document.body.toggleAttribute('data-over', !!m.session.over);
         break;
     }
   };

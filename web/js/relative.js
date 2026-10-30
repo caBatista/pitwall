@@ -1,4 +1,4 @@
-import { esc, flagHtml, makeHtml, stHtml, talkHtml, OUT, flagFx, irHtml, pitHtml } from './util.js';
+import { esc, flagHtml, makeHtml, stHtml, talkHtml, OUT, flagFx, irHtml, pitHtml, fitIr, irKeyOf, INV } from './util.js';
 
 // lap time with one decimal: 211.827 -> 3:31.8
 const lap1 = (x) => {
@@ -44,14 +44,14 @@ export const relative = {
       const c = cars.get(i) || {};
       const cls = S.classMap.get(d.cls) || { color: '#8b95a7' };
       const [lic, sr] = (d.lic || '').split(' ');
-      // best lap (like RaceLab): the last one is -1 whenever iRacing invalidated it
-      const best = c.best ? `<span class="t ${c.cb ? 'cb' : ''}">${lap1(c.best)}</span>` : '<span class="t dim">-:--.-</span>';
+      // best lap (like RaceLab); * = their latest lap was invalidated / had an incident
+      const best = c.best ? `<span class="t ${c.cb ? 'cb' : ''}">${lap1(c.best)}${c.lastx ? INV : ''}</span>` : `<span class="t dim">-:--.-${c.lastx ? INV : ''}</span>`;
       return `<div class="rpos">${c.cp || '–'}</div>
         <div class="rcar" style="--cc:${cls.color}"><span class="rn">${esc(d.num)}</span><span class="mk">${makeHtml(d.make)}</span></div>
         ${flagHtml(d.country)}
         <div class="rname"><span class="nm">${esc(d.name)}</span>${extra}</div>
         <div class="sr" style="--lc:${d.licColor}">${lic ? `<b>${esc((sr || '').slice(0, 3))}</b><i>${esc(lic)}</i>` : ''}</div>
-        <div class="irb">${irHtml(d.ir, c.irg)}</div>
+        <div class="irb">${irHtml(d.ir, c.irg, st.session?.kind === 'race')}</div>
         <div class="rlast">${best}</div>`;
     };
 
@@ -77,5 +77,7 @@ export const relative = {
     const b = [...behind, ...Array(Math.max(0, n - behind.length)).fill(null)];
     const html = a.map((r) => row(r, 'ahead')).join('') + meRow + b.map((r) => row(r, 'behind')).join('');
     if (html !== this.last) { this.body.innerHTML = html; this.last = html; }
+    // the standings sizes the iRating chips (it has every driver); alone, the relative does
+    if (!document.querySelector('#w-standings .irb')) fitIr(this.body, irKeyOf(S, st.cars));
   },
 };

@@ -144,7 +144,7 @@ export function makeHtml(make) {
 const WATCH = '<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6.8" r="4.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 4.6v2.4l1.4 1M4.8 1.4h2.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 const MIC = '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="4.2" y="1" width="3.6" height="6.2" rx="1.8" fill="currentColor"/><path d="M2.6 5.6a3.4 3.4 0 0 0 6.8 0M6 9v2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
 // the most serious flag wins: DQ > black > meatball > slow down (furled) [> PIT > class fastest]
-const ST = {
+export const ST = {
   dq: '<span class="st dq">DQ</span>',
   black: '<span class="st black" title="Black flag"><i></i></span>',
   repair: '<span class="st repair" title="Meatball (repair)"><i></i></span>',
@@ -160,18 +160,40 @@ export const talkHtml = (on) => {
   const k = (Math.sin(performance.now() / 160) + 1) / 2;
   return `<span class="st talk" title="On the radio" style="transform:scale(${(1 + 0.14 * k).toFixed(3)});box-shadow:0 0 ${(4 + 8 * k).toFixed(1)}px ${(1 + 2 * k).toFixed(1)}px rgba(0,214,90,${(0.35 + 0.4 * k).toFixed(2)})">${MIC}</span>`;
 };
-// iRating chip, with the estimated gain/loss of this race next to it (green up / red down)
-export function irHtml(ir, gain) {
+// iRating chip, with the estimated gain/loss of this race next to it (green up / red down,
+// white dash for 0). Fixed-width parts so every chip is the same size: rating | arrow | gain,
+// the gain right-aligned. withGain: the race shows the gain part on every row, even without one.
+export function irHtml(ir, gain, withGain = gain != null) {
   if (!ir) return '';
-  const v = ir >= 1000 ? (ir / 1000).toFixed(1) + 'k' : ir;
-  const g = gain ? `<em class="${gain > 0 ? 'up' : 'down'}">${gain > 0 ? '▲' : '▼'}${Math.abs(gain)}</em>` : '';
-  return `<b>${v}${g}</b>`;
+  const v = (ir / 1000).toFixed(1) + 'k';   // always in k: 720 -> 0.7k
+  const g = !withGain ? '' : gain ? `<em class="${gain > 0 ? 'up' : 'down'}"><i>${gain > 0 ? '▲' : '▼'}</i>${Math.abs(gain)}</em>` : '<em><i>–</i>0</em>';
+  return `<b><span>${v}</span>${g}</b>`;
 }
+// every iRating chip as wide as the widest one of the session - no room kept for a 10k+ or a
+// 3-digit gain nobody has. Measured once per set of values (key), set as --irv / --irg.
+let irKey = '';
+export function fitIr(root, key) {
+  if (key === irKey) return;
+  const st = document.body.style;
+  st.removeProperty('--irv'); st.removeProperty('--irg');
+  let v = 0, g = 0;
+  for (const el of root.querySelectorAll('.irb b span')) v = Math.max(v, el.offsetWidth);
+  for (const el of root.querySelectorAll('.irb em')) g = Math.max(g, el.offsetWidth);
+  if (!v) return;   // nothing laid out (hidden panel): measure again next frame
+  irKey = key;
+  st.setProperty('--irv', v + 'px');
+  if (g) st.setProperty('--irg', g + 'px');
+}
+export const irKeyOf = (S, cars) => Object.values(S.drivers).map((d) => d.ir).join() + '|' + cars.map((c) => Math.abs(c.irg || 0)).reduce((m, x) => Math.max(m, String(x).length), 0) + '|' + cars.some((c) => c.irg != null);
+
 export const OUT = '<span class="tag out">OUT</span>';
 
 // last pit stop, RaceLab style: amber "L12" (lap of the stop) + time on pit road, outlined.
 // The time blinks while the car is still in the pits (rows re-render every frame: computed, not CSS).
 // PIT_ALL: true shows it in every session (testing); races only otherwise.
+// invalidated lap (or one with my incidents): an asterisk after the time
+export const INV = '<sup class="inv">*</sup>';
+
 export const PIT_ALL = false;
 export function pitHtml(c, kind) {
   if (!c || c.pl == null || (!PIT_ALL && kind !== 'race')) return '';

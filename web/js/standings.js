@@ -1,4 +1,4 @@
-import { esc, lapTime, gapText, prefs, savePrefs, flagHtml, makeHtml, stHtml, talkHtml, tyreHtml, HELMET, OUT, flagFx, irHtml, pitHtml } from './util.js';
+import { esc, lapTime, gapText, prefs, savePrefs, flagHtml, makeHtml, stHtml, talkHtml, tyreHtml, HELMET, OUT, flagFx, irHtml, pitHtml, ST, fitIr, irKeyOf, INV } from './util.js';
 
 /**
  * Standings. Multiclass-aware: by default cars are grouped per class (each with
@@ -62,14 +62,19 @@ export const standings = {
       byCls.get(d.cls).push(c);
     }
 
-    const myLaps = (st.cars.find((c) => c.i === st.me.i) || {}).lh || [];
+    const myCar = st.cars.find((c) => c.i === st.me.i) || {};
+    const myLaps = myCar.lh || [];
     // their k-th latest lap minus my k-th latest: + they are slower, - they are faster
+    // (* = one of the two laps was invalidated / had an incident)
     const delta = (c, k) => {
       if (c.i === st.me.i || c.lh?.[k] == null || myLaps[k] == null) return '<div class="dl"></div>';
       const v = Math.round((c.lh[k] - myLaps[k]) * 10) / 10;
-      return `<div class="dl ${v > 0 ? 'slower' : v < 0 ? 'faster' : ''}">${v > 0 ? '+' : ''}${v.toFixed(1)}</div>`;
+      const x = c.lx?.[k] || myCar.lx?.[k];
+      return `<div class="dl ${v > 0 ? 'slower' : v < 0 ? 'faster' : ''}">${v > 0 ? '+' : ''}${v.toFixed(1)}${x ? INV : ''}</div>`;
     };
 
+    // race over: the results, nothing live - no tags but the fastest lap, no tyre / int / gap / last / delta
+    const over = !!st.session?.over;
     const rowHtml = (c, inGroup) => {
       const d = S.drivers[c.i];
       const cls = S.classMap.get(d.cls) || { color: '#8b95a7' };
@@ -85,17 +90,27 @@ export const standings = {
       const [lic, sr] = (d.lic || '').split(' ');
       const gain = isRace ? (inGroup ? c.pgc : c.pg) : null;   // positions gained since the start
       const pg = gain ? `<span class="pg ${gain > 0 ? 'up' : 'down'}">${gain > 0 ? '▲' : '▼'}${Math.abs(gain)}</span>` : (isRace ? '<span class="pg"></span>' : '');
+      if (over) return `<div class="rrow srow over ${me ? 'me' : ''} ${S.sel === c.i ? 'sel' : ''}" data-i="${c.i}">
+        <div class="rpos">${pos}</div>
+        <div class="rcar" style="--cc:${cls.color}"><span class="rn">${esc(d.num)}</span>${pg}<span class="mk">${makeHtml(d.make)}</span></div>
+        ${flagHtml(d.country)}
+        <div class="rname"><span class="nm">${esc(d.name)}</span></div>
+        <div class="sr" style="--lc:${d.licColor}">${lic ? `<b>${esc((sr || '').slice(0, 3))}</b><i>${esc(lic)}</i>` : ''}</div>
+        <div class="irb">${irHtml(d.ir, c.irg, isRace)}</div>
+        <div class="t ${c.cb ? 'cb' : ''}">${c.best ? lapTime(c.best) : '-:--.---'}</div>
+        <div class="sflag">${c.cb ? ST.fast : ''}</div>
+      </div>`;
       return `<div class="rrow srow ${me ? 'me' : ''} ${S.sel === c.i ? 'sel' : ''} ${off || c.pit ? 'pitrow' : ''}" data-i="${c.i}">
         <div class="rpos">${pos}</div>
         <div class="rcar" style="--cc:${cls.color}"><span class="rn">${esc(d.num)}</span>${pg}<span class="mk">${makeHtml(d.make)}</span></div>
         ${flagHtml(d.country)}
         <div class="rname"><span class="nm">${esc(d.name)}</span>${c.out ? OUT : ''}${pitHtml(c, st.session?.kind)}</div>
         <div class="sr" style="--lc:${d.licColor}">${lic ? `<b>${esc((sr || '').slice(0, 3))}</b><i>${esc(lic)}</i>` : ''}</div>
-        <div class="irb">${irHtml(d.ir, c.irg)}</div>
+        <div class="irb">${irHtml(d.ir, c.irg, isRace)}</div>
         <div class="c">${tyreHtml(c.tc)}</div>
         <div class="t dim">${intTxt}</div>
         <div class="t ${leader ? 'dim' : ''}">${gapTxt}</div>
-        <div class="t ${c.pb ? 'pb' : ''}">${c.last ? lapTime(c.last) : '-:--.---'}</div>
+        <div class="t ${c.pb ? 'pb' : ''}">${c.last ? lapTime(c.last) + (c.lastx ? INV : '') : '-:--.---'}</div>
         <div class="t ${c.cb ? 'cb' : ''}">${c.best ? lapTime(c.best) : '-:--.---'}</div>
         ${delta(c, 0)}${delta(c, 1)}${delta(c, 2)}
         <div class="sflag">${talkHtml(st.talk === c.i)}<span class="fxw" style="${flagFx('s' + c.i, c.fl)}">${stHtml(c, true)}</span></div>
@@ -103,10 +118,10 @@ export const standings = {
     };
 
     // class header = title row: class, drivers and SOF over pos..iR, then the column titles
-    const head = (name, color, n, sof) => `<div class="ghead srow" style="--cc:${color}">
+    const head = (name, color, n, sof) => `<div class="ghead srow${over ? ' over' : ''}" style="--cc:${color}">
         <div class="gl">${esc(name)}<span class="gn" title="Drivers">${HELMET}${n}</span>${sof ? `<span class="gn">SOF ${sof}</span>` : ''}</div>
-        <div class="c">Tyre</div><div class="r">Int</div><div class="r">Gap</div><div class="r">Last</div><div class="r">Fastest</div>
-        <div class="c dhead">Delta</div><div class="c">Flag</div></div>`;
+        ${over ? '<div class="r">Fastest</div><div class="c">Flag</div>' : `<div class="c">Tyre</div><div class="r">Int</div><div class="r">Gap</div><div class="r">Last</div><div class="r">Fastest</div>
+        <div class="c dhead">Delta</div><div class="c">Flag</div>`}</div>`;
 
     let html = '';
     if (grouped) {
@@ -127,6 +142,7 @@ export const standings = {
       this.body.scrollTop = keep;
       this.last = html;
     }
+    fitIr(this.body, irKeyOf(S, st.cars));
 
     // "you" summary bar
     const m = st.me, mc = st.cars.find((c) => c.i === m.i);
@@ -142,8 +158,8 @@ export const standings = {
       const g = m.irGain;
       const bar = `
         <div class="kv"><small>Position</small><b>${mc.p != null ? `P${mc.p}` : '–'}${multi && mc.p != null ? ` · C${mc.cp}` : ''}</b></div>
-        <div class="kv"><small>Lap</small><b>${m.lap ?? '–'}</b></div>
-        <div class="kv"><small>Last</small><b>${lapTime(m.last)}</b></div>
+        <div class="kv"><small>Lap</small><b>${m.lap ?? '–'}${isRace && !over && st.session.raceLaps ? `<span class="of">/${st.session.raceLaps}${st.session.raceLapsEst ? '*' : ''}</span>` : ''}</b></div>
+        ${over ? '' : `<div class="kv"><small>Last</small><b>${lapTime(m.last)}${m.lastx && m.last ? INV : ''}</b></div>`}
         <div class="kv"><small>Best</small><b>${lapTime(m.best)}</b></div>
 ` + (st.session?.kind === 'practice' ? '' : `
         <div class="kv"><small>iRating</small><b class="${g == null ? '' : g >= 0 ? 'pos' : 'neg'}">${g == null ? '–' : (g > 0 ? '+' : '') + g}</b></div>

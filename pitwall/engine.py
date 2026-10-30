@@ -23,6 +23,7 @@ CAR_FLAGS = [(0x20000, "dq"), (0x10000, "black"), (0x100000, "repair"), (0x80000
 
 
 SOF_K = 1600 / math.log(2)
+GAP_FIELDS = ("gl", "ld", "gi", "li", "go", "lo", "gio", "lio")   # gaps / laps to class leader, interval, overall
 
 
 def limit(v):
@@ -237,9 +238,14 @@ class Engine:
         self._qtimes = {}      # car -> (fastest, last) qualifying lap, shown until the green
         self._in_pit = set()   # cars seen on pit road
         self._out = {}         # car -> laps completed when it left pit road (out lap)
+        self._flag_lap = None  # my laps completed when the checkered flag came out (race over once I cross)
+        self._race_gaps = {}   # car -> its gap fields on the last frame before the checkered flag
         self._pits = {}        # car -> [lap of its last pit stop, pit road entry time, time on pit road or None while there]
-        self._laps = {}        # car -> deque of its latest valid lap times, newest first
+        self._laps = {}        # car -> deque of its latest laps (time, invalid?), newest first
         self._seen_last = {}   # car -> CarIdxLastLapTime last seen (a change = a new lap)
+        self._race_laps = None  # (my race length in laps, estimated?)
+        self._mark, self._line, self._pend_lap, self._lap_t = {}, {}, {}, {}   # own lap timing (invalid laps)
+        self._inc_line = None   # my incident count when my last lap ended
         self.tyres = {}        # tyre compound index -> "dry" / "wet" (DriverInfo.DriverTires)
         self._grid = {}        # car -> starting position (overall) for positions gained in a race
         self._mylaps = deque(maxlen=60)   # my lap log (test sessions): lap, time, temp, fuel left, fuel used
@@ -367,16 +373,57 @@ class Engine:
         est = arr("CarIdxEstTime", None)
         cflags = arr("CarIdxSessionFlags", blank)
         tyre = arr("CarIdxTireCompound", [-1] * 64)
-        # lap history for the standings delta columns: a new CarIdxLastLapTime is a new lap
-        # (an invalidated lap reports -1 and is simply not recorded)
+        # lap history (standings Last / delta columns): a new CarIdxLastLapTime is a new lap. An
+        # invalidated lap gets no time (-1), so we time it ourselves, line to line, and mark it
+        # (x = True); my own laps are also marked when I picked up incidents during them
+        pme = raw.get("PlayerCarIdx")
+        inc = raw.get("PlayerCarMyIncidentCount")
         if self._seen_last is None:   # first frame of a session: take note, a lap only counts once it changes
             self._seen_last = dict(enumerate(last))
+            self._mark, self._line, self._pend_lap, self._lap_t = {}, {}, {}, {}
+            self._inc_line = inc
+
+        def push(i, lt, x):
+            h = self._laps.setdefault(i, deque(maxlen=3))
+            if i == pme and inc is not None:
+                x = x or (self._inc_line is not None and inc > self._inc_line)
+                self._inc_line = inc
+            if not x and h and h[0][1] and t - self._lap_t.get(i, -1e9) < 10:
+                h[0] = (lt, h[0][1] and i == pme)   # the official time came late: not invalid after all
+            else:
+                h.appendleft((lt, x))
+            self._lap_t[i] = t
+
         for i, lt in enumerate(last):
             if lt and lt > 0 and lt != self._seen_last.get(i):
-                h = self._laps.setdefault(i, deque(maxlen=3))
-                if not h or h[0] != round(lt, 3):   # -1 then the same time again (left/rejoined): not a new lap
-                    h.appendleft(round(lt, 3))
+                h = self._laps.get(i)
+                if not h or h[0][0] != round(lt, 3):   # -1 then the same time again (left/rejoined): not a new lap
+                    push(i, round(lt, 3), False)
+                self._pend_lap.pop(i, None)
             self._seen_last[i] = lt
+            # line crossings (interpolated between frames), for our own time of the lap
+            lc, p = lapc[i] if i < len(lapc) else -1, pct[i] if i < len(pct) else -1.0
+            prev = self._mark.get(i)
+            if i >= len(surf) or surf[i] < 0 or not 0 <= p <= 1 or lc is None:
+                self._mark.pop(i, None)
+                self._line.pop(i, None)
+                continue
+            if prev and lc == prev[0] + 1:
+                d = (p - prev[1]) % 1.0
+                tc = prev[2] + (t - prev[2]) * min(1.0, (1.0 - prev[1]) / d) if 0 < d < 0.5 else t
+                ln = self._line.get(i)
+                if ln and ln[0] == lc - 1 and t - self._lap_t.get(i, -1e9) > 3:
+                    self._pend_lap[i] = (round(tc - ln[1], 3), t)   # no official time within 3 s: invalid
+                self._line[i] = (lc, tc)
+            elif prev and lc != prev[0]:
+                self._line.pop(i, None)
+            self._mark[i] = (lc, p, t)
+        for i, (lt, t0) in list(self._pend_lap.items()):
+            if t < t0:
+                del self._pend_lap[i]
+            elif t - t0 > 3:
+                del self._pend_lap[i]
+                push(i, lt, True)
 
         snum = raw.get("SessionNum")
         # a new session (another event, or practice -> qualify -> race) starts its own laps:
@@ -387,8 +434,9 @@ class Engine:
             self.fuel.reset()
             self.wx_hist.clear()   # weather is per session too (set by hand, or rain in one and not the next)
             self._wx_t = -1e9
-            self._in_pit, self._out, self._pits = set(), {}, {}
-            self._laps, self._seen_last = {}, None
+            self._in_pit, self._out, self._pits, self._race_gaps = set(), {}, {}, {}
+            self._flag_lap = None
+            self._laps, self._seen_last, self._race_laps = {}, None, None
             self._mylaps, self._my_last, self._fuel_at_line, self._my_lapc = deque(maxlen=60), raw.get("LapLastLapTime"), None, None
             self._pending_lap = None
             self._grid = {}
@@ -438,7 +486,23 @@ class Engine:
         # way overlays do it - CarIdxPosition only changes when a car crosses the line. Cars not
         # on track keep iRacing's position behind them. Otherwise iRacing's position when it has one.
         racing = is_race and int(raw.get("SessionState") or 0) == 4
-        if racing and any(lapc[i] is not None and lapc[i] >= 0 and surf[i] >= 0 for i in present):
+        # after the checkered flag (5) and in the cool down (6): the official result, not where
+        # the cars happen to be on track - SessionInfo's results, else iRacing's position
+        finished = is_race and int(raw.get("SessionState") or 0) >= 5
+        rpos = {i: int(res[i].get("Position") or 0) for i in present if res.get(i)}
+        # race over (the board switches to the results): cool down, or I took the flag myself
+        state = int(raw.get("SessionState") or 0)
+        if not finished:
+            self._flag_lap = None
+        elif self._flag_lap is None and me < len(lapc):
+            self._flag_lap = lapc[me]
+        # (crossed the line after the flag, or already in the pits / out of the car: the
+        # app may also only open once the flag is out)
+        mine = me < len(lapc)
+        over = is_race and (state >= 6 or (finished and (not mine or surf[me] in (-1, 1) or pitr[me] or (self._flag_lap is not None and lapc[me] > self._flag_lap))))
+        if finished and any(pos[i] > 0 or rpos.get(i) for i in present):
+            order = sorted(present, key=lambda i: (rpos.get(i) or (pos[i] if pos[i] > 0 else 999), i))
+        elif racing and any(lapc[i] is not None and lapc[i] >= 0 and surf[i] >= 0 for i in present):
             running = [i for i in present if lapc[i] is not None and lapc[i] >= 0 and surf[i] >= 0]
             rest = [i for i in present if i not in running]
             order = sorted(running, key=lambda i: (-tot[i], i)) + sorted(rest, key=lambda i: (pos[i] if pos[i] > 0 else 999 + i))
@@ -505,8 +569,21 @@ class Engine:
                 return est_s
             return s
 
+        def result_gap(i, j):
+            """After the flag: (laps_down, seconds) from the official results, None without them."""
+            ri, rj = res.get(i) or {}, res.get(j) or {}
+            if not ri or not rj:
+                return None
+            laps = int(rj.get("LapsComplete") or 0) - int(ri.get("LapsComplete") or 0)
+            if laps >= 1:
+                return laps, None
+            ti, tj = float(ri.get("Time") or -1), float(rj.get("Time") or -1)
+            return (0, round(max(0.0, ti - tj), 3)) if ti > 0 and tj > 0 else None
+
         def gap(i, j):
             """(laps_down, seconds) of car i relative to car j that is ahead of it."""
+            if finished:
+                return result_gap(i, j) or (None, None)
             diff = tot[j] - tot[i]
             laps = int(math.floor(diff + 1e-6))
             if laps >= 1:
@@ -536,13 +613,17 @@ class Engine:
                 "best": round(best[i], 3) if best[i] > 0 else None,
                 "pit": bool(pitr[i]), "out": i in self._out, "fl": car_flag(cflags[i]), "srf": surf[i],
                 "tc": self.tyres.get(tyre[i], "wet" if tyre[i] > 0 else "dry") if tyre[i] >= 0 else None,
-                "lh": list(self._laps.get(i, ())),
+                "lh": [x[0] for x in self._laps.get(i, ())],
+                "lx": [x[1] for x in self._laps.get(i, ())],   # invalidated / with my incidents
                 # last pit stop: lap, seconds on pit road, still there (pd counts up live)
                 **({"pl": self._pits[i][0], "pd": round(self._pits[i][2] if self._pits[i][2] is not None else t - self._pits[i][1], 1),
                     "pip": self._pits[i][2] is None} if i in self._pits else {}),
                 "cb": bool(best[i] > 0 and class_best.get(cid) == best[i]),
                 "pb": bool(best[i] > 0 and last[i] > 0 and abs(last[i] - best[i]) < 1e-4),
             }
+            h = self._laps.get(i)
+            if h and h[0][1] and not pre_green:   # latest lap invalid: our own time, marked
+                c["last"], c["lastx"], c["pb"] = h[0][0], True, False
             if is_race and not pre_green:
                 if ci == 0:
                     c["gl"], c["ld"], c["gi"], c["li"] = None, 0, None, 0
@@ -554,6 +635,11 @@ class Engine:
                 else:
                     c["lo"], c["go"] = gap(i, order[0])
                     c["lio"], c["gio"] = gap(i, order[k - 1])
+                if racing:
+                    self._race_gaps[i] = {f: c[f] for f in GAP_FIELDS}
+                elif finished and any(c.get(f) is None for f in ("ld", "li", "lo", "lio")):
+                    # no official times yet: the gaps as they were when the flag fell
+                    c.update(self._race_gaps.get(i) or {f: None if f[0] == "g" else 0 for f in GAP_FIELDS})
             else:
                 def delta(a, b):
                     return round(best[a] - best[b], 3) if best[a] > 0 and best[b] > 0 else None
@@ -669,23 +755,54 @@ class Engine:
                            bool(raw.get("OnPitRoad")))
 
         tr = time_rem if time_rem < UNLIMITED_TIME else None
+
+        # race length in laps, for me: the race ends when the overall leader takes the flag, so
+        # it is the leader's laps (exact in a lap race, estimated in a timed one: the lap running
+        # when the clock hits zero is the last) minus how far behind I am, rounded up.
+        # Frozen once the flag is out.
+        if not is_race:
+            self._race_laps = None
+        elif not finished and order and me in tot and surf[me] >= 0:
+            lead = order[0]
+            d = max(0.0, tot[lead] - tot[me])
+            if laps_total and laps_total < UNLIMITED_LAPS:
+                n = math.ceil(laps_total - d - 1e-6)
+                self._race_laps = (n, n != laps_total)
+            elif time_total and time_total < UNLIMITED_TIME and time_rem < UNLIMITED_TIME:
+                lh = [x[0] for x in self._laps.get(lead, ()) if not x[1]]
+                lt = (sum(lh) / len(lh)) if lh else (best[lead] if best[lead] > 0 else lap_of(lead))
+                n = math.ceil(tot[lead] + max(0.0, time_rem) / lt - 1e-6) if lt else None
+                self._race_laps = (math.ceil(n - d - 1e-6), True) if n else None
+        race_laps = self._race_laps
+        myh = self._laps.get(me)
+        my_lastx = bool(myh and myh[0][1])
+
+        def mine_t(v, arr):
+            if v and v > 0:
+                return v
+            return round(arr[me], 3) if me < len(arr) and arr[me] > 0 else None
+
         return {
             "type": "state", "connected": True, "t": round(t, 2),
             "session": {
                 "type": stype or "Session", "name": sess.get("SessionName") or stype,
-                "isRace": is_race, "kind": kind, "state": int(raw.get("SessionState") or 0),
+                "isRace": is_race, "kind": kind, "state": int(raw.get("SessionState") or 0), "over": over,
                 "stateName": SESSION_STATE.get(int(raw.get("SessionState") or 0), ""),
                 "flag": flag, "timeRemain": tr,
                 "timeTotal": time_total if time_total < UNLIMITED_TIME else None,
                 "lapsRemain": laps_rem if laps_rem < UNLIMITED_LAPS else None,
                 "lapsTotal": laps_total if laps_total < UNLIMITED_LAPS else None,
+                # my race length in laps, and whether it is an estimate (timed race, or lapped)
+                "raceLaps": race_laps[0] if race_laps else None, "raceLapsEst": bool(race_laps and race_laps[1]),
                 "tod": raw.get("SessionTimeOfDay"), "replay": bool(raw.get("IsReplayPlaying")),
                 "units": "imperial" if raw.get("DisplayUnits") == 0 else "metric",
             },
             "me": {
                 "i": me, "p": overall.get(me), "cp": cpos.get(me), "cls": self.drivers.get(me, {}).get("cls"),
                 "lap": raw.get("Lap"), "pct": raw.get("LapDistPct"),
-                "last": raw.get("LapLastLapTime"), "best": raw.get("LapBestLapTime"),
+                # the player's own lap times reset once out of the car: then the car's (results) times
+                "last": myh[0][0] if my_lastx else mine_t(raw.get("LapLastLapTime"), last), "lastx": my_lastx,
+                "best": mine_t(raw.get("LapBestLapTime"), best),
                 "cur": raw.get("LapCurrentLapTime"),
                 "delta": raw.get("LapDeltaToBestLap"), "deltaOk": bool(raw.get("LapDeltaToBestLap_OK")),
                 "speed": raw.get("Speed"), "gear": raw.get("Gear"), "rpm": raw.get("RPM"),

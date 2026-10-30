@@ -266,7 +266,7 @@ class MockSource:
         dt = min(0.25, now - self._wall) * self.speed
         self._wall = now
         self.t += dt
-        if self.t > self.race_len + 90:
+        if self.t > self.race_len + 600:
             self._reset()
             return self.poll()
         self._step(dt)
@@ -301,9 +301,12 @@ class MockSource:
             # lap bookkeeping
             if math.floor(nd) > math.floor(c["d"]) and c["d"] >= 0:
                 lt = self.t - c["t_lap"]
-                c["last"] = lt
-                if c["best"] < 0 or lt < c["best"]:
-                    c["best"] = lt
+                if random.random() < 0.1:   # invalidated lap (track limits): no time, like iRacing
+                    c["last"] = -1.0
+                else:
+                    c["last"] = lt
+                    if c["best"] < 0 or lt < c["best"]:
+                        c["best"] = lt
                 c["t_lap"] = self.t
                 if self.rng.random() < 0.012:
                     c["inc"] += self.rng.choice([1, 2, 4])
