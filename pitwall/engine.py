@@ -239,6 +239,7 @@ class Engine:
         self._in_pit = set()   # cars seen on pit road
         self._out = {}         # car -> laps completed when it left pit road (out lap)
         self._flag_lap = None  # my laps completed when the checkered flag came out (race over once I cross)
+        self._flag_laps, self._fin = {}, set()   # everyone's laps at the flag / who took the checkered
         self._race_gaps = {}   # car -> its gap fields on the last frame before the checkered flag
         self._pits = {}        # car -> [lap of its last pit stop, pit road entry time, time on pit road or None while there]
         self._laps = {}        # car -> deque of its latest laps (time, invalid?), newest first
@@ -494,8 +495,22 @@ class Engine:
         state = int(raw.get("SessionState") or 0)
         if not finished:
             self._flag_lap = None
+            self._flag_laps, self._fin = {}, set()
         elif self._flag_lap is None and me < len(lapc):
             self._flag_lap = lapc[me]
+        # who took the checkered flag: the winner (the flag comes out as they cross), whoever
+        # crosses the line after it, iRacing's own per-car checkered bit, and in the cool down
+        # everyone still classified as running
+        if finished:
+            if not self._flag_laps:
+                self._flag_laps = {i: lapc[i] for i in present}
+                first = next((i for i in present if rpos.get(i) == 1), None)
+                if first is not None:
+                    self._fin.add(first)
+            for i in present:
+                if (lapc[i] > self._flag_laps.get(i, lapc[i]) or int(cflags[i] or 0) & 0x1
+                        or (state >= 6 and res.get(i) and int(res[i].get("ReasonOutId") or 0) == 0)):
+                    self._fin.add(i)
         # (crossed the line after the flag, or already in the pits / out of the car: the
         # app may also only open once the flag is out)
         mine = me < len(lapc)
@@ -620,6 +635,7 @@ class Engine:
                     "pip": self._pits[i][2] is None} if i in self._pits else {}),
                 "cb": bool(best[i] > 0 and class_best.get(cid) == best[i]),
                 "pb": bool(best[i] > 0 and last[i] > 0 and abs(last[i] - best[i]) < 1e-4),
+                "fin": i in self._fin,   # took the checkered flag
             }
             h = self._laps.get(i)
             if h and h[0][1] and not pre_green:   # latest lap invalid: our own time, marked

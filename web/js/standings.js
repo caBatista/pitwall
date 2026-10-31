@@ -73,7 +73,7 @@ export const standings = {
       return `<div class="dl ${v > 0 ? 'slower' : v < 0 ? 'faster' : ''}">${v > 0 ? '+' : ''}${v.toFixed(1)}${x ? INV : ''}</div>`;
     };
 
-    // race over: the results, nothing live - no tags but the fastest lap, no tyre / int / gap / last / delta
+    // race over: the results, nothing live - no tags but the chequered flag (finished), no tyre / int / gap / last / delta
     const over = !!st.session?.over;
     const rowHtml = (c, inGroup) => {
       const d = S.drivers[c.i];
@@ -98,7 +98,7 @@ export const standings = {
         <div class="sr" style="--lc:${d.licColor}">${lic ? `<b>${esc((sr || '').slice(0, 3))}</b><i>${esc(lic)}</i>` : ''}</div>
         <div class="irb">${irHtml(d.ir, c.irg, isRace)}</div>
         <div class="t ${c.cb ? 'cb' : ''}">${c.best ? lapTime(c.best) : '-:--.---'}</div>
-        <div class="sflag">${c.cb ? ST.fast : ''}</div>
+        <div class="sflag">${c.fin ? ST.fin : ''}</div>
       </div>`;
       return `<div class="rrow srow ${me ? 'me' : ''} ${S.sel === c.i ? 'sel' : ''} ${off || c.pit ? 'pitrow' : ''}" data-i="${c.i}">
         <div class="rpos">${pos}</div>

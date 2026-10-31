@@ -143,6 +143,8 @@ export function makeHtml(make) {
 // small inline icons, coloured through CSS (currentColor)
 const WATCH = '<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6.8" r="4.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 4.6v2.4l1.4 1M4.8 1.4h2.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 const MIC = '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="4.2" y="1" width="3.6" height="6.2" rx="1.8" fill="currentColor"/><path d="M2.6 5.6a3.4 3.4 0 0 0 6.8 0M6 9v2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
+// chequered flag, 6 x 4 squares, stretched to fill the whole chip
+const CHECKER = '<svg viewBox="0 0 12 8" preserveAspectRatio="none" aria-hidden="true" shape-rendering="crispEdges"><rect width="12" height="8" fill="#fff"/><path d="M0 0h2v2h-2zM4 0h2v2h-2zM8 0h2v2h-2zM2 2h2v2h-2zM6 2h2v2h-2zM10 2h2v2h-2zM0 4h2v2h-2zM4 4h2v2h-2zM8 4h2v2h-2zM2 6h2v2h-2zM6 6h2v2h-2zM10 6h2v2h-2z" fill="#000"/></svg>';
 // the most serious flag wins: DQ > black > meatball > slow down (furled) [> PIT > class fastest]
 export const ST = {
   dq: '<span class="st dq">DQ</span>',
@@ -151,6 +153,7 @@ export const ST = {
   warn: `<span class="st warn" title="Slow down"><i>${WATCH}</i></span>`,
   pit: '<span class="st pit">PIT</span>',
   fast: `<span class="st fast" title="Fastest lap in class">${WATCH}</span>`,
+  fin: `<span class="st fin" title="Finished">${CHECKER}</span>`,
 };
 // relative: flags only; standings: flags, then PIT, then the class fastest lap
 export const stHtml = (c, full = false) => ST[c.fl] || (full ? (c.pit ? ST.pit : c.cb ? ST.fast : '') : '');

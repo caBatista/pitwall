@@ -259,6 +259,8 @@ svg.tyre.wet { color: var(--blue); }
 }
 .st.warn i svg { width: 9px; height: 9px; }
 .st.fast { background: var(--purple); color: var(--txt); box-shadow: none; }
+.st.fin { padding: 0; width: 24px; overflow: hidden; }   /* race over: took the chequered flag, edge to edge */
+.st.fin svg { display: block; width: 100%; height: 100%; }
 .st.talk { background: #00d65a; color: #04210f; }   /* strong green, pulsing from JS */
 .st > svg { width: 11px; height: 11px; }
 .rlast { text-align: right; }
