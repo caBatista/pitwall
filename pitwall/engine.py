@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 import re
 from collections import deque
+from functools import lru_cache
 
 from .trackmap import TrackMapper
 
@@ -56,11 +57,16 @@ def ir_change(me_ir, me_pos, field):
     n = len(field)
     if n < 2 or not me_ir or not me_pos:
         return None
-    q = lambda r: math.exp(-r / SOF_K)
-    expected = sum((1 - q(me_ir)) * q(r) / ((1 - q(r)) * q(me_ir) + (1 - q(me_ir)) * q(r))
-                   for r, _ in field) - 0.5   # the sum includes me vs me = 0.5
     fudge = (n / 2 - me_pos) / 100
-    return round((n - me_pos - expected - fudge) * 200 / n)
+    return round((n - me_pos - _ir_expected(me_ir, tuple(r for r, _ in field)) - fudge) * 200 / n)
+
+
+@lru_cache(maxsize=128)
+def _ir_expected(me_ir, irs):
+    """Part of ir_change that doesn't depend on positions: the same every frame of a session."""
+    q = lambda r: math.exp(-r / SOF_K)
+    return sum((1 - q(me_ir)) * q(r) / ((1 - q(r)) * q(me_ir) + (1 - q(me_ir)) * q(r))
+               for r in irs) - 0.5   # the sum includes me vs me = 0.5
 
 
 def car_flag(bits):

@@ -31,6 +31,14 @@ def _clean(o):
     return o
 
 
+def dumps_clean(obj) -> str:
+    """dumps() for a state frame: _clean walks every value, only worth it if there is a NaN to remove."""
+    try:
+        return dumps(obj)
+    except ValueError:
+        return dumps(_clean(obj))
+
+
 @web.middleware
 async def no_cache(request, handler):
     resp = await handler(request)
@@ -118,7 +126,7 @@ class App:
             self.engine.set_session(info)
         if not self.engine.drivers:
             return
-        state = _clean(self.engine.update(raw))
+        state = self.engine.update(raw)
         out = []
         if self.engine.drivers_ver != self._drivers_ver:
             self._drivers_ver = self.engine.drivers_ver
@@ -129,7 +137,7 @@ class App:
         if time.time() - self._wx_sent > 5:
             self._wx_sent = time.time()
             out.append(dumps(self.engine.wx_msg()))
-        out.append(dumps(state))
+        out.append(dumps_clean(state))
         for text in out:
             await self.broadcast(text)
 
