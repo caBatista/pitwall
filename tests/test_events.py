@@ -255,3 +255,38 @@ def test_a_seek_forward_invents_nothing(engine):
     run(engine, 0, 5, lambda t: racing({0: (5, .50), 1: (5, .49)}, t, IsReplayPlaying=True, ReplayFrameNumEnd=90000))
     run(engine, 600, 610, lambda t: racing({0: (20, .50), 1: (20, .60)}, t, IsReplayPlaying=True, ReplayFrameNumEnd=60000, PlayerCarMyIncidentCount=6))
     assert not kinds(engine)
+
+
+def test_in_a_replay_the_clock_is_the_replays(engine):
+    setup(engine)
+    run(engine, 100, 103, lambda t: racing({0: (5, .50), 1: (5, .49)}, t))
+    # o SessionTime segue o relogio ao vivo; o que esta na tela e o ReplaySessionTime
+    make = lambda t: racing({0: (5, .50), 1: (5, .49 if t < 50 else .51)}, 200 + t, IsReplayPlaying=True,
+                            ReplaySessionTime=t, ReplaySessionNum=0, ReplayFrameNumEnd=9000)
+    run(engine, 40, 60, make)
+    e = kinds(engine, "pass")
+    assert len(e) == 1 and 49.9 <= e[0]["t"] <= 50.3
+
+
+def test_the_speed_never_comes_after_the_search():
+    """Enviada logo depois do salto, a velocidade cancela o salto no iRacing."""
+    from pitwall.sources import IRacingSource
+
+    calls = []
+
+    class Ir:
+        is_connected = True
+
+        def __getitem__(self, k):
+            return 1
+
+        def __getattr__(self, name):
+            return lambda *a: calls.append(name)
+
+    src = IRacingSource.__new__(IRacingSource)
+    src.ir = Ir()
+    src.replay(0, 1000, "64")
+    assert calls == ["cam_switch_num", "replay_set_play_speed", "replay_search_session_time"]
+    calls.clear()
+    src.replay_live()
+    assert calls == ["replay_set_play_speed", "replay_search"]

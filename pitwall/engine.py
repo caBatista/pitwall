@@ -927,8 +927,12 @@ class Engine:
         # (a saved replay has no live: what it plays is the race)
         behind = (raw.get("ReplayFrameNumEnd") or 0) / 60.0 if raw.get("IsReplayPlaying") and not self.meta.get("replayFile") else 0.0
         self.in_car = bool(raw.get("IsOnTrack"))
+        # in a replay SessionTime keeps being the live clock; the moment on screen is ReplaySessionTime
+        replaying = bool(raw.get("IsReplayPlaying"))
+        ev_t = (raw.get("ReplaySessionTime") or t) if replaying else t
+        ev_num = raw.get("ReplaySessionNum") if replaying and (raw.get("ReplaySessionNum") or 0) >= 0 else snum
         ev_frame = SimpleNamespace(
-            t=t, sub=self.meta.get("subId"), snum=snum, kind=kind, state=state, flags=int(raw.get("SessionFlags") or 0),
+            t=ev_t, sub=self.meta.get("subId"), snum=ev_num, kind=kind, state=state, flags=int(raw.get("SessionFlags") or 0),
             me=me, present=present, cls={i: self.drivers[i]["cls"] for i in present}, tot=tot, pct=pct, surf=surf, pitr=pitr,
             best=best, cflags=cflags, car_flag=car_flag, cpos=cpos, fin=set(self._fin), laps=self._laps, inc=inc, 
             laps_done=lambda i: (lapc[i] if lapc[i] is not None else -1), length=(self.meta.get("lengthKm") or 5.0) * 1000,

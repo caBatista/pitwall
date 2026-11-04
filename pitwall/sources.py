@@ -24,7 +24,7 @@ SCALARS = [
     "LapDistPct", "LapDeltaToBestLap", "LapDeltaToBestLap_OK",
     "LapBestLapTime", "LapLastLapTime", "LapCurrentLapTime",
     "Speed", "Gear", "RPM", "FuelLevel", "FuelLevelPct", "FuelUsePerHour",
-    "PlayerCarMyIncidentCount", "DisplayUnits", "IsReplayPlaying", "ReplayFrameNumEnd",
+    "PlayerCarMyIncidentCount", "DisplayUnits", "IsReplayPlaying", "ReplayFrameNumEnd", "ReplaySessionTime", "ReplaySessionNum",
     "YawNorth",
     "TrackTemp", "TrackTempCrew", "AirTemp", "TrackWetness", "Skies",
     "AirPressure", "RelativeHumidity", "WindVel", "WindDir", "Precipitation",
@@ -103,14 +103,15 @@ class IRacingSource:
         if self.ir.is_connected:
             if num:
                 self.ir.cam_switch_num(num, self.ir["CamGroupNumber"] or 1, self.ir["CamCameraNumber"] or 0)
-            self.ir.replay_search_session_time(session, ms)
+            # the speed goes first: sent right after a search, it cancels the search (seen in iRacing)
             self.ir.replay_set_play_speed(1)
+            self.ir.replay_search_session_time(session, ms)
 
     def replay_live(self):
         import irsdk  # noqa: WPS433
         if self.ir.is_connected:
+            self.ir.replay_set_play_speed(1)   # first, as in replay
             self.ir.replay_search(irsdk.RpySrchMode.to_end)
-            self.ir.replay_set_play_speed(1)
 
     def open_chat(self, text):
         """Open the chat in the sim with text already typed; the driver writes the rest and presses Enter."""
@@ -490,6 +491,7 @@ class MockSource:
             "FuelLevelPct": me["fuel"] / 110.0, "FuelUsePerHour": 0.0 if speed < 1 else 3.1 * speed / self.L * 3600,
             "PlayerCarMyIncidentCount": me["inc"], "DisplayUnits": 1,
             "IsReplayPlaying": self.out, "ReplayFrameNumEnd": int(max(0.0, t - self.watch) * 60) if self.watch is not None else 1,
+            "ReplaySessionTime": self.watch if self.watch is not None else t, "ReplaySessionNum": 0,
             "YawNorth": self._at(self.hd, mp) if not pit else self._at(self.hd, mp),
             "TrackTemp": track, "TrackTempCrew": track - 0.6, "AirTemp": air,
             "TrackWetness": wet, "Skies": 1 if rain < 0.05 else (2 if rain < 0.3 else 3),
