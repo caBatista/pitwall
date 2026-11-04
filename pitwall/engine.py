@@ -251,6 +251,8 @@ class Engine:
         self._laps = {}        # car -> deque of its latest laps (time, invalid?), newest first
         self._seen_last = {}   # car -> CarIdxLastLapTime last seen (a change = a new lap)
         self._race_laps = None  # (my race length in laps, estimated?)
+        self.tyre_on = None     # "dry" / "wet" on my car
+        self._want, self._want_raw, self._want_t = None, None, 0.0   # tyre the weather asks for (held 5 s)
         self._mark, self._line, self._pend_lap, self._lap_t = {}, {}, {}, {}   # own lap timing (invalid laps)
         self._inc_line = None   # my incident count when my last lap ended
         self.tyres = {}        # tyre compound index -> "dry" / "wet" (DriverInfo.DriverTires)
@@ -321,7 +323,7 @@ class Engine:
             name = re.sub(r"\d+$", "", (d.get("UserName") or "").strip()).strip() or f"Car {idx}"
             self.drivers[idx] = {
                 # solo sessions report the user name as the team: not a team
-                "i": idx, "name": name, "team": "" if d.get("TeamName") == d.get("UserName") else d.get("TeamName") or "",
+                "i": idx, "name": name, "user": (d.get("UserName") or "").strip(), "team": "" if d.get("TeamName") == d.get("UserName") else d.get("TeamName") or "",
                 "make": car_make(d.get("CarPath")), "country": d.get("FlairName") or "",
                 "num": str(d.get("CarNumber") or ""), "cls": cid, "car": car,
                 "ir": d.get("IRating") or 0, "lic": d.get("LicString") or "",
@@ -358,6 +360,10 @@ class Engine:
         return {"type": "wx", "hist": list(self.wx_hist)}
 
     # ---- per-tick state ----------------------------------------------------
+    def tyre_index(self, kind):
+        """Compound index iRacing uses for "dry" / "wet", None if this car doesn't have it."""
+        return next((i for i, k in sorted(self.tyres.items()) if k == kind), None)
+
     def update(self, raw):
         t = float(raw.get("SessionTime") or 0.0)
         dt = 0.0 if self._prev_t is None else t - self._prev_t
@@ -444,6 +450,7 @@ class Engine:
             self._in_pit, self._out, self._pits, self._race_gaps = set(), {}, {}, {}
             self._flag_lap = None
             self._laps, self._seen_last, self._race_laps = {}, None, None
+            self._want, self._want_raw = None, None
             self._mylaps, self._my_last, self._fuel_at_line, self._my_lapc = deque(maxlen=60), raw.get("LapLastLapTime"), None, None
             self._pending_lap = None
             self._grid = {}
@@ -460,6 +467,11 @@ class Engine:
         is_race = kind == "race"
         flag = flag_name(raw.get("SessionFlags"))
         me = int(raw.get("PlayerCarIdx") if raw.get("PlayerCarIdx") is not None else self.player)
+        # the car the sim is focused on (the reference driver): standings highlight, relative, deltas,
+        # map and footer follow it. Mine in the car, whoever I watch otherwise. me stays the player:
+        # fuel, pit, incidents and the lap log only exist for the player's own car
+        cam = raw.get("CamCarIdx")
+        foc = cam if cam in self.drivers else me
         talk = raw.get("RadioTransmitCarIdx")
 
         present = []
@@ -557,8 +569,8 @@ class Engine:
             bs = [best[i] for i in g if best[i] > 0]
             class_best[cid] = min(bs) if bs else None
 
-        my_cls = self.drivers.get(me, {}).get("cls")
-        ref = (class_best.get(my_cls) or best[me] if me < len(best) else 0) or 0
+        my_cls = self.drivers.get(foc, {}).get("cls")
+        ref = (class_best.get(my_cls) or best[foc] if foc < len(best) else 0) or 0
         if not ref or ref <= 0:
             ref = (self.classes.get(my_cls) or {}).get("est") or 100.0
 
@@ -683,7 +695,7 @@ class Engine:
                 for i in g:
                     if cpos.get(i):
                         byc[i]["irg"] = ir_change(self.drivers[i]["ir"], cpos[i], field)
-            ir_gain = byc.get(me, {}).get("irg")
+            ir_gain = byc.get(foc, {}).get("irg")
 
         # my lap log (test sessions): fuel is split at the line, the lap time arrives just after
         my_fuel = raw.get("FuelLevel")
@@ -702,17 +714,19 @@ class Engine:
                 self._pending_lap = None
             self._my_last = mylast
 
-        # relative: everyone physically near me, by real elapsed time
+        # relative: everyone physically near the focused car, by real elapsed time
         rel = []
-        if me in tot and surf[me] >= 0 and pct[me] >= 0:
+        if foc in tot and surf[foc] >= 0 and pct[foc] >= 0:
             for i in present:
-                if i == me or surf[i] < 0 or pct[i] < 0:
+                if i == foc or surf[i] < 0 or pct[i] < 0:
                     continue
-                dp = pct[i] - pct[me]
+                dp = pct[i] - pct[foc]
                 dp = (dp + 0.5) % 1.0 - 0.5
-                dtm = timed_gap(i, me) if dp >= 0 else -timed_gap(me, i)
-                # lap difference only means something in a race (in practice everyone is "laps ahead")
-                laps = int(round(tot[i] - tot[me] - dp)) if is_race else 0
+                dtm = timed_gap(i, foc) if dp >= 0 else -timed_gap(foc, i)
+                # lap difference only means something in a race once it started (in practice everyone
+                # is "laps ahead"; on the grid and the formation lap the cars cross the line at
+                # different moments, but everybody is on the same lap)
+                laps = int(round(tot[i] - tot[foc] - dp)) if is_race and not pre_green else 0
                 rel.append({"i": i, "dt": round(dtm, 2), "dl": laps, "pit": bool(pitr[i]), "out": i in self._out, "fl": car_flag(cflags[i]), "srf": surf[i]})
             ahead = sorted([r for r in rel if r["dt"] >= 0], key=lambda r: r["dt"])[:8]
             behind = sorted([r for r in rel if r["dt"] < 0], key=lambda r: -r["dt"])[:8]
@@ -751,6 +765,31 @@ class Engine:
             "mode": mode,
             "lapsLeft": round(laps_left, 2) if laps_left is not None else None,
             "lapTime": round(lap_t, 3) if lap_t else None,
+            "lap": raw.get("Lap"),
+        }
+
+        # pit: what is on the car and what is set for the next stop. iRacing has no forecast, so a
+        # tyre change is offered when the weather turned against the tyres on the car: rain or a
+        # wet track on dries, the rain gone on wets. Held 5 s, so a passing drizzle doesn't blink it.
+        on = raw.get("PlayerTireCompound")
+        on = on if on is not None and on >= 0 else (tyre[me] if me < len(tyre) else -1)
+        self.tyre_on = self.tyres.get(on)
+        rain = float(raw.get("Precipitation") or 0)
+        want = None
+        if len(set(self.tyres.values())) > 1:
+            if self.tyre_on == "dry" and (rain > 0.02 or int(raw.get("TrackWetness") or 0) >= 4):
+                want = "wet"
+            elif self.tyre_on == "wet" and rain <= 0.01:
+                want = "dry"
+        if want != self._want_raw or t < self._want_t:
+            self._want_raw, self._want_t = want, t
+        if t - self._want_t >= 5:
+            self._want = want
+        pit = {
+            "ok": bool(raw.get("IsOnTrack")),   # iRacing only takes pit commands from the car
+            "tyre": self.tyre_on, "tyreSet": self.tyres.get(raw.get("PitSvTireCompound"), self.tyre_on),
+            "want": self._want,
+            "fuel": round(raw.get("PitSvFuel") or 0, 1) if int(raw.get("PitSvFlags") or 0) & 0x10 else 0,
         }
 
         # weather
@@ -778,15 +817,15 @@ class Engine:
 
         tr = time_rem if time_rem < UNLIMITED_TIME else None
 
-        # race length in laps, for me: the race ends when the overall leader takes the flag, so
+        # race length in laps, for the focused car: the race ends when the overall leader takes the flag, so
         # it is the leader's laps (exact in a lap race, estimated in a timed one: the lap running
-        # when the clock hits zero is the last) minus how far behind I am, rounded up.
+        # when the clock hits zero is the last) minus how far behind it is, rounded up.
         # Frozen once the flag is out.
         if not is_race:
             self._race_laps = None
-        elif not finished and order and me in tot and surf[me] >= 0:
+        elif not finished and order and foc in tot and surf[foc] >= 0:
             lead = order[0]
-            d = max(0.0, tot[lead] - tot[me])
+            d = max(0.0, tot[lead] - tot[foc])
             if laps_total and laps_total < UNLIMITED_LAPS:
                 n = math.ceil(laps_total - d - 1e-6)
                 self._race_laps = (n, n != laps_total)
@@ -796,13 +835,15 @@ class Engine:
                 n = math.ceil(tot[lead] + max(0.0, time_rem) / lt - 1e-6) if lt else None
                 self._race_laps = (math.ceil(n - d - 1e-6), True) if n else None
         race_laps = self._race_laps
-        myh = self._laps.get(me)
+        myh = self._laps.get(foc)
         my_lastx = bool(myh and myh[0][1])
+
+        own = foc == me
 
         def mine_t(v, arr):
             if v and v > 0:
                 return v
-            return round(arr[me], 3) if me < len(arr) and arr[me] > 0 else None
+            return round(arr[foc], 3) if foc < len(arr) and arr[foc] > 0 else None
 
         return {
             "type": "state", "connected": True, "t": round(t, 2),
@@ -820,20 +861,20 @@ class Engine:
                 "units": "imperial" if raw.get("DisplayUnits") == 0 else "metric",
             },
             "me": {
-                "i": me, "p": overall.get(me), "cp": cpos.get(me), "cls": self.drivers.get(me, {}).get("cls"),
-                "lap": raw.get("Lap"), "pct": raw.get("LapDistPct"),
+                "i": foc, "p": overall.get(foc), "cp": cpos.get(foc), "cls": self.drivers.get(foc, {}).get("cls"),
+                "lap": raw.get("Lap") if own else (lapc[foc] or 0) + 1, "pct": pct[foc],
                 # the player's own lap times reset once out of the car: then the car's (results) times
-                "last": myh[0][0] if my_lastx else mine_t(raw.get("LapLastLapTime"), last), "lastx": my_lastx,
-                "best": mine_t(raw.get("LapBestLapTime"), best),
+                "last": myh[0][0] if my_lastx else mine_t(raw.get("LapLastLapTime") if own else None, last), "lastx": my_lastx,
+                "best": mine_t(raw.get("LapBestLapTime") if own else None, best),
                 "cur": raw.get("LapCurrentLapTime"),
                 "delta": raw.get("LapDeltaToBestLap"), "deltaOk": bool(raw.get("LapDeltaToBestLap_OK")),
                 "speed": raw.get("Speed"), "gear": raw.get("Gear"), "rpm": raw.get("RPM"),
-                "pit": bool(raw.get("OnPitRoad")), "inc": raw.get("PlayerCarMyIncidentCount"),
+                "pit": bool(raw.get("OnPitRoad")), "inc": raw.get("PlayerCarMyIncidentCount") if own else None,   # nobody else's is known
                 "incLimit": self.meta.get("incLimit"),
                 "incPen": self.meta.get("incPen"), "incPenNext": self.meta.get("incPenNext"), "incDq": self.meta.get("incDq"),
                 "irGain": ir_gain, "laps": list(self._mylaps),
             },
-            "cars": cars, "rel": rel, "fuel": fuel, "wx": wx,
+            "cars": cars, "rel": rel, "fuel": fuel, "pit": pit, "wx": wx,
             "talk": talk if talk is not None and talk >= 0 else None,   # car on the radio right now
             "map": {"status": self.mapper.status, "progress": round(self.mapper.progress, 3),
                     "ver": self.mapper.version},

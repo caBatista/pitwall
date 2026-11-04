@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -80,9 +81,44 @@ class App:
                         continue
                     if data.get("cmd") == "reset_map":
                         self.engine.mapper.reset()
+                    elif data.get("cmd") == "pit_fuel":
+                        self.pit_fuel(data.get("liters"))
+                    elif data.get("cmd") == "pit_tyre":
+                        self.pit_tyre(data.get("tyre"))
+                    elif data.get("cmd") == "focus":
+                        self.focus(data.get("i"))
+                    elif data.get("cmd") == "chat":
+                        await asyncio.to_thread(self.chat, data.get("i"), data.get("to"))
         finally:
             self.clients.discard(ws)
         return ws
+
+    # ---- pit commands from the fuel / weather cards -------------------------
+    def pit_fuel(self, liters):
+        try:
+            self.source.pit_fuel(max(0, min(math.ceil(float(liters)), math.ceil(self.engine.tank) or 1000)))
+        except (TypeError, ValueError, OverflowError):
+            pass
+
+    def pit_tyre(self, kind):
+        idx = self.engine.tyre_index(kind)
+        if idx is not None:   # back to what is on the car: just undoes the choice, no new tyres
+            self.source.pit_tyre(idx, kind != self.engine.tyre_on)
+
+    # ---- driver rows: click = reference driver, right click = message ------
+    def _driver(self, i):
+        return self.engine.drivers.get(i) if isinstance(i, int) else None
+
+    def focus(self, i):
+        d = self._driver(i)
+        if d and d["num"]:
+            self.source.focus(i, d["num"])
+
+    def chat(self, i, to):
+        d = self._driver(i)
+        target = {"car": "num", "driver": "user", "team": "team"}.get(to)
+        if d and target and d[target]:
+            self.source.open_chat("/" + d[target].replace(" ", ".") + " ")   # Caio.Batista: how iRacing writes a name
 
     async def broadcast(self, text: str):
         if not self.clients:

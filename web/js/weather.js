@@ -1,4 +1,4 @@
-import { fmt, tod } from './util.js';
+import { fmt, tod, tyreHtml } from './util.js';
 
 const SKIES = ['Clear', 'Partly cloudy', 'Mostly cloudy', 'Overcast'];
 const WET = ['Dry', 'Mostly dry', 'Very lightly wet', 'Lightly wet', 'Moderately wet', 'Very wet', 'Extremely wet'];
@@ -10,9 +10,10 @@ const WET = ['Dry', 'Mostly dry', 'Very lightly wet', 'Lightly wet', 'Moderately
  */
 export const weather = {
   id: 'w-weather',
-  mount(root) {
+  mount(root, S) {
     root.innerHTML = `
       <div class="card-h"><div class="ttl"><i></i>Weather</div>
+        <button class="pit-btn tyre-btn" id="wx-tyre" hidden></button>
         <div class="leg"><span><i style="background:var(--amber)"></i>Track</span><span><i style="background:var(--txt)"></i>Air</span></div></div>
       <div class="wx" id="wx-grid"></div>`;
     this.grid = root.querySelector('#wx-grid');
@@ -35,6 +36,7 @@ export const weather = {
     this.cv = q('#wx-cv');
     this.ctx = this.cv.getContext('2d');
     this.drawn = 0;
+    q('#wx-tyre').addEventListener('click', () => { if (this.tyre) S.send({ cmd: 'pit_tyre', tyre: this.tyre }); });
     new ResizeObserver(() => { this.drawn = 0; }).observe(this.cv.parentElement);
   },
 
@@ -86,6 +88,15 @@ export const weather = {
     q('#wx-gr').textContent = w.grip ? w.grip[0].toUpperCase() + w.grip.slice(1) : '–';
     const p = fmt.press(w.press);
     q('#wx-pt').textContent = `${p == null ? '–' : p.toFixed(fmt.pressU() === 'hPa' ? 0 : 2) + ' ' + fmt.pressU()} · ${tod(w.tod)}`;
+
+    // weather turning (or a change already set): the tyre for the next stop, click again to undo
+    const pit = st.pit || {}, set = pit.tyreSet !== pit.tyre, to = set ? pit.tyreSet : pit.want;
+    const btn = q('#wx-tyre'), show = !!(to && pit.ok);
+    this.tyre = set ? pit.tyre : to;
+    btn.hidden = !show;
+    btn.classList.toggle('on', set);
+    const label = show ? `${tyreHtml(to)}<b>${to.toUpperCase()}</b>` : '';
+    if (label !== this.label) { btn.innerHTML = this.label = label; }
 
     // chart, redraw when history grows or on resize
     const key = h.length + ':' + (h.length ? h[h.length - 1][0] : 0) + fmt.tempU();

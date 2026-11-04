@@ -13,12 +13,14 @@ import math
 import random
 import time
 
+from . import chat
+
 # Everything the engine needs, nothing more: fewer reads per tick = lower CPU.
 SCALARS = [
     "SessionTime", "SessionNum", "SessionState", "SessionFlags",
     "SessionTimeRemain", "SessionLapsRemainEx", "SessionLapsTotal",
     "SessionTimeTotal", "SessionTimeOfDay", "SessionInfoUpdate",
-    "PlayerCarIdx", "IsOnTrack", "OnPitRoad", "Lap", "LapCompleted", "RadioTransmitCarIdx",
+    "PlayerCarIdx", "CamCarIdx", "PlayerTireCompound", "PitSvTireCompound", "PitSvFlags", "PitSvFuel", "IsOnTrack", "OnPitRoad", "Lap", "LapCompleted", "RadioTransmitCarIdx",
     "LapDistPct", "LapDeltaToBestLap", "LapDeltaToBestLap_OK",
     "LapBestLapTime", "LapLastLapTime", "LapCurrentLapTime",
     "Speed", "Gear", "RPM", "FuelLevel", "FuelLevelPct", "FuelUsePerHour",
@@ -74,6 +76,36 @@ class IRacingSource:
             ir.unfreeze_var_buffer_latest()
         return raw
 
+    def pit_fuel(self, liters):
+        """Fuel to add at the next stop, in litres; 0 unticks it."""
+        import irsdk  # noqa: WPS433
+        if liters > 0:
+            self.ir.pit_command(irsdk.PitCommandMode.fuel, liters)
+        else:
+            self.ir.pit_command(irsdk.PitCommandMode.clear_fuel)
+
+    def pit_tyre(self, compound, change):
+        """Tyre compound for the next stop; change: also tick the four tyres (keeping the pressures)."""
+        import irsdk  # noqa: WPS433
+        m = irsdk.PitCommandMode
+        self.ir.pit_command(m.tc, compound)
+        if change:
+            for corner in (m.lf, m.rf, m.lr, m.rr):
+                self.ir.pit_command(corner, 0)
+
+    def focus(self, i, num):
+        """Point the iRacing camera at this car, keeping the camera in use."""
+        if self.ir.is_connected:
+            self.ir.cam_switch_num(num, self.ir["CamGroupNumber"] or 1, self.ir["CamCameraNumber"] or 0)
+
+    def open_chat(self, text):
+        """Open the chat in the sim with text already typed; the driver writes the rest and presses Enter."""
+        import irsdk  # noqa: WPS433
+        if self.ir.is_connected and chat.focus_sim():
+            self.ir.chat_command(irsdk.ChatCommandMode.begin_chat)
+            time.sleep(0.2)   # the box has to be open: before that, keys are the sim's hotkeys
+            chat.type_text(text)
+
     def session_info(self, raw):
         tick = raw.get("SessionInfoUpdate")
         if tick == self._info_tick:
@@ -105,13 +137,22 @@ _CLASSES = [
     (4002, "GT3", "Porsche 992 GT3 R", 0xFFCD3C, 1.000, 14, 110.0, 3.1),
     (4003, "GT4", "BMW M4 GT4", 0x3CC8FF, 0.905, 7, 100.0, 2.7),
 ]
+_CLASSES_WIDE = [   # --mock-wide: a bigger field, six classes
+    (4004, "GTP", "Porsche 963", 0xFF5A5A, 1.170, 6, 88.0, 2.9),
+    *_CLASSES,
+    (4005, "TCR", "Audi RS 3 LMS", 0x5AE08C, 0.870, 6, 100.0, 2.4),
+    (4006, "CUP", "Porsche 911 GT3 Cup", 0xF58CDC, 0.930, 6, 100.0, 2.8),
+]
 
 
 class MockSource:
     name = "simulator"
 
-    def __init__(self, speed: float = 4.0, seed: int = 11, session: str = "Race", track_id: int = 9999):
+    def __init__(self, speed: float = 4.0, seed: int = 11, session: str = "Race", track_id: int = 9999,
+                 start: float = 0.0, cam=None, wide: bool = False):
         self.speed = max(0.1, speed)
+        self.classes = _CLASSES_WIDE if wide else _CLASSES
+        self.start, self.cam = start, cam   # jump to this session time; focused car (a car index, or "cycle")
         self.seed = seed
         self.track_id = track_id   # a real TrackID makes the map come from maps/library
         self.session = session   # iRacing SessionType to pretend: Race / Open Qualify / Practice / Offline Testing
@@ -126,6 +167,10 @@ class MockSource:
         self._wall = time.perf_counter()
         self._sent_info = False
         self.race_len = 3600.0
+        self.tyre, self.sv_tyre, self.sv_flags, self.sv_fuel = 0, 0, 0x10, 60.0   # on my car / set for the next stop
+        while self.t < self.start:   # the race so far, so positions, laps and fuel are real
+            self.t += 0.25
+            self._step(0.25)
 
     def _build_track(self):
         n = 2400
@@ -189,11 +234,11 @@ class MockSource:
 
     def _build_cars(self):
         rng = self.rng
-        used = set()
+        used, numbers = set(), {64}
         self.cars = []
         idx = 0
         grid = 0
-        order = [(c, i) for c in _CLASSES for i in range(c[5])]
+        order = [(c, i) for c in self.classes for i in range(c[5])]
         rng.shuffle(order)
         # the player is car 0 and drives a GT3
         order.sort(key=lambda ci: 0 if (ci[0][0] == 4002 and ci[1] == 0) else 1)
@@ -204,12 +249,14 @@ class MockSource:
                     used.add(name)
                     break
             you = idx == 0
+            num = 64 if you else rng.choice([n for n in range(2, 99) if n not in numbers])
+            numbers.add(num)
             ir = rng.randint(1100, 6800)
             lic = "A 3.41" if ir > 4500 else ("B 2.80" if ir > 2200 else "C 3.12")
             self.cars.append({
                 "idx": idx,
                 "name": "Caio Batista" if you else name,
-                "num": str(64 if you else rng.randint(2, 98)),
+                "num": str(num),
                 "cls": cls,
                 "ir": 1990 if you else ir,
                 "lic": "B 2.85" if you else lic,
@@ -225,6 +272,21 @@ class MockSource:
             grid += 1
 
     # ---- iRacing-like interface -------------------------------------------
+    def pit_fuel(self, liters):
+        self.sv_fuel = float(liters) or self.sv_fuel
+        self.sv_flags = self.sv_flags | 0x10 if liters > 0 else self.sv_flags & ~0x10
+
+    def pit_tyre(self, compound, change):
+        self.sv_tyre = compound
+        if change:
+            self.sv_flags |= 0xF
+
+    def focus(self, i, num):
+        self.cam = i
+
+    def open_chat(self, text):
+        print(f"[mock] chat: {text!r}", flush=True)
+
     def session_info(self, raw):
         if self._sent_info:
             return None
@@ -253,6 +315,7 @@ class MockSource:
             "DriverInfo": {
                 "DriverCarIdx": 0, "DriverCarFuelMaxLtr": 110.0, "DriverCarMaxFuelPct": 1.0,
                 "DriverCarEstLapTime": 100.0, "Drivers": drivers,
+                "DriverTires": [{"TireIndex": 0, "TireCompoundType": "Hard"}, {"TireIndex": 1, "TireCompoundType": "Wet"}],
             },
             "SessionInfo": {"Sessions": [
                 {"SessionNum": 0, "SessionType": self.session, "SessionName": self.session.upper(),
@@ -295,7 +358,12 @@ class MockSource:
                     c["pit_t"] -= dt
                     if c["pit_t"] <= 0:
                         c["pit"] = "exit"
-                        c["fuel"] = cls[6] * 0.97
+                        if c["idx"]:
+                            c["fuel"] = cls[6] * 0.97
+                        else:   # mine: what is set in the pit menu
+                            if self.sv_flags & 0x10:
+                                c["fuel"] = min(110.0, c["fuel"] + self.sv_fuel)
+                            self.tyre, self.sv_flags = self.sv_tyre, self.sv_flags & 0x10
             c["v"] = v
             nd = c["d"] + v * dt / self.L
             # lap bookkeeping
@@ -375,6 +443,8 @@ class MockSource:
             "SessionFlags": flags, "SessionTimeRemain": remain, "SessionLapsRemainEx": 32767,
             "SessionLapsTotal": 32767, "SessionTimeTotal": self.race_len,
             "SessionTimeOfDay": 12 * 3600 + t, "SessionInfoUpdate": 1, "PlayerCarIdx": 0,
+            "CamCarIdx": int(time.perf_counter() / 10) % len(self.cars) if self.cam == "cycle" else (self.cam or 0),
+            "PlayerTireCompound": self.tyre, "PitSvTireCompound": self.sv_tyre, "PitSvFlags": self.sv_flags, "PitSvFuel": self.sv_fuel,
             "IsOnTrack": True, "OnPitRoad": pit, "Lap": max(0, lapc[0] + 1), "LapCompleted": lapc[0],
             "LapDistPct": mp, "LapDeltaToBestLap": 0.35 * math.sin(t / 9.0) + 0.12 * math.sin(t / 2.3),
             "LapDeltaToBestLap_OK": me["best"] > 0, "LapBestLapTime": me["best"],
@@ -393,6 +463,6 @@ class MockSource:
             "CarIdxLapCompleted": lapc, "CarIdxLapDistPct": pct, "CarIdxTrackSurface": surf,
             "CarIdxOnPitRoad": pitr, "CarIdxPosition": pos, "CarIdxClassPosition": cpos,
             "CarIdxLastLapTime": last, "CarIdxBestLapTime": best,
-            "CarIdxEstTime": est,
+            "CarIdxEstTime": est, "CarIdxTireCompound": [self.tyre] + [0] * (n - 1),
         }
         return raw

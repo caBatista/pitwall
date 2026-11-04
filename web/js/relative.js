@@ -1,4 +1,5 @@
 import { esc, flagHtml, makeHtml, stHtml, talkHtml, OUT, flagFx, irHtml, pitHtml, fitIr, irKeyOf, INV, patchRows } from './util.js';
+import { driverActions } from './drivers.js';
 
 // lap time with one decimal: 211.827 -> 3:31.8
 const lap1 = (x) => {
@@ -23,10 +24,7 @@ export const relative = {
       </div>
       <div class="rel-body" id="rl-body"></div>`;
     this.body = root.querySelector('#rl-body');
-    root.addEventListener('click', (e) => {
-      const r = e.target.closest('.rrow[data-i]');
-      if (r) { const i = Number(r.dataset.i); S.sel = S.sel === i ? null : i; }
-    });
+    driverActions(root, S);
   },
 
   update(S) {
@@ -68,11 +66,11 @@ export const relative = {
       const txt = tr >= 60 ? `${Math.floor(tr / 60)}:${(tr % 60).toFixed(1).padStart(4, '0')}` : tr.toFixed(1);
       const c = cars.get(r.i) || r;
       const extra = (r.out ? OUT : lap) + pitHtml(c, st.session?.kind) + `<span class="fxw" style="${flagFx('r' + r.i, c.fl)}">${stHtml(c)}</span>` + talkHtml(st.talk === r.i);
-      return { key: r.i, i: r.i, cls: `rrow ${r.dl > 0 ? 'up' : r.dl < 0 ? 'down' : ''} ${r.pit ? 'pitrow' : ''} ${S.sel === r.i ? 'sel' : ''}`, cells: [...cells(r.i, d, extra), [`rt ${side}`, txt]] };
+      return { key: r.i, i: r.i, cls: `rrow ${r.dl > 0 ? 'up' : r.dl < 0 ? 'down' : ''} ${r.pit ? 'pitrow' : ''}`, cells: [...cells(r.i, d, extra), [`rt ${side}`, txt]] };
     };
 
     const md = S.drivers[st.me.i], mine = cars.get(st.me.i);
-    const meRow = md ? { key: 'me', cls: 'rrow me', cells: [...cells(st.me.i, md, (mine?.out ? OUT : '') + pitHtml(mine, st.session?.kind) + `<span class="fxw" style="${flagFx('r' + st.me.i, mine?.fl)}">${stHtml(mine || {})}</span>` + talkHtml(st.talk === st.me.i)), ['rt', '–']] } : empty('m');
+    const meRow = md ? { key: 'me', i: st.me.i, cls: 'rrow me', cells: [...cells(st.me.i, md, (mine?.out ? OUT : '') + pitHtml(mine, st.session?.kind) + `<span class="fxw" style="${flagFx('r' + st.me.i, mine?.fl)}">${stHtml(mine || {})}</span>` + talkHtml(st.talk === st.me.i)), ['rt', '–']] } : empty('m');
 
     // ahead is ordered far → near already; pad on top so the layout never jumps
     const a = [...Array(Math.max(0, n - ahead.length)).fill(null), ...ahead];

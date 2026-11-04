@@ -96,7 +96,7 @@ export const trackmap = {
         if (c.i === me || c.pct == null || c.pct < 0 || c.srf < 0) continue;
         const col = multi ? S.classMap.get(S.drivers[c.i]?.cls)?.color || '#8a8a8f' : '#f4b400';   // single class: amber
         ctx.globalAlpha = c.pit ? 0.45 : 1;
-        disc(c, u, col, { t: c.cp ?? '–', col: '#111112' }, c.i === S.sel ? '#f4f2ec' : '#111112');
+        disc(c, u, col, { t: c.cp ?? '–', col: '#111112' }, '#111112');
       }
       ctx.globalAlpha = 1;
     }

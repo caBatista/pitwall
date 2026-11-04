@@ -234,16 +234,17 @@ export function irHtml(ir, gain, withGain = gain != null) {
 // 3-digit gain nobody has. Measured once per set of values (key), set as --irv / --irg.
 let irKey = '';
 export function fitIr(root, key) {
-  if (key === irKey) return;
+  if (key === irKey) return true;
   const st = document.body.style;
   st.removeProperty('--irv'); st.removeProperty('--irg');
   let v = 0, g = 0;
   for (const el of root.querySelectorAll('.irb b span')) v = Math.max(v, el.offsetWidth);
   for (const el of root.querySelectorAll('.irb em')) g = Math.max(g, el.offsetWidth);
-  if (!v) return;   // nothing laid out (hidden panel): measure again next frame
+  if (!v) return false;   // nothing laid out (hidden panel): measure again next frame
   irKey = key;
   st.setProperty('--irv', v + 'px');
   if (g) st.setProperty('--irg', g + 'px');
+  return true;
 }
 export const irKeyOf = (S, cars) => Object.values(S.drivers).map((d) => d.ir).join() + '|' + cars.map((c) => Math.abs(c.irg || 0)).reduce((m, x) => Math.max(m, String(x).length), 0) + '|' + cars.some((c) => c.irg != null);
 

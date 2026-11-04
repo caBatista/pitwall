@@ -8,7 +8,7 @@ import { prefs, savePrefs, fmt } from './util.js';
  */
 export const fuel = {
   id: 'w-fuel',
-  mount(root) {
+  mount(root, S) {
     root.innerHTML = `
       <div class="card-h"><div class="ttl"><i></i>Fuel</div>
         <div class="fuel-ctl" id="fu-ctl"><span>Reserve</span><input class="num-in" id="fu-res" type="number" step="0.1" min="0" max="5">
@@ -17,7 +17,7 @@ export const fuel = {
         <div class="fu-lvl"><b id="fu-lvl">–</b><small id="fu-u">L</small><span id="fu-pct"></span></div>
         <div class="fu-bar"><i id="fu-bar"></i></div>
         <div class="stats" id="fu-stats"></div>
-        <div class="fu-fin" id="fu-fin"></div>
+        <div class="fu-plan" id="fu-plan"><div class="fu-fin" id="fu-fin"></div><button class="pit-btn" id="fu-set" hidden></button></div>
       </div>`;
     this.q = (s) => root.querySelector(s);
     const res = this.q('#fu-res'), tgt = this.q('#fu-tgt');
@@ -25,6 +25,7 @@ export const fuel = {
     res.addEventListener('input', () => { prefs.reserve = Math.max(0, Number(res.value) || 0); savePrefs(); });
     tgt.addEventListener('input', () => { prefs.targetLaps = Math.max(1, Number(tgt.value) || 1); savePrefs(); });
     this.tgt = tgt;
+    this.q('#fu-set').addEventListener('click', () => { if (this.add != null) S.send({ cmd: 'pit_fuel', liters: this.add }); });
     this.key = '';
     this.frac = 0;
   },
@@ -35,7 +36,7 @@ export const fuel = {
     const f = st.fuel, q = this.q;
     const race = st.session.kind === 'race';
     q('#fu-ctl').hidden = !race;
-    q('#fu-fin').hidden = !race;
+    q('#fu-plan').hidden = !race;
 
     const auto = f.mode !== 'none' && f.lapsLeft != null;
     this.tgt.disabled = auto;
@@ -76,14 +77,14 @@ export const fuel = {
     // TO FINISH
     const L = (x) => `${fmt.vol(x).toFixed(1)} ${fmt.volU()}`;
     const target = auto ? f.lapsLeft : prefs.targetLaps;
-    let main = 'Learning', sub = 'complete a clean lap', cls = '';
+    let main = 'Learning', sub = 'complete a clean lap', cls = '', add = null;   // add: litres for the next stop
     if (avg && lvl != null && target != null) {
       const toGo = target * avg;                       // fuel still needed to see the flag
       const spare = lvl - toGo;
       if (spare >= prefs.reserve * avg) {
-        main = `${L(toGo)} to go`; sub = `+${L(spare)} spare`; cls = 'ok';
+        main = `${L(toGo)} to go`; sub = `+${L(spare)} spare`; cls = 'ok'; add = 0;
       } else {
-        const lapNow = st.me.lap ?? 0;
+        const lapNow = f.lap ?? 0;
         const pitLap = lapNow + Math.max(0, Math.floor(lvl / avg));   // last lap you can complete
         const atStop = lvl - (pitLap - lapNow) * avg;                  // what is left when you stop
         const missing = toGo + prefs.reserve * avg - lvl;               // to finish with the reserve
@@ -92,11 +93,22 @@ export const fuel = {
         main = `Pit lap ${pitLap}`;
         sub = fill ? `fill the tank (+${L(room)}) · ${Math.ceil(missing / (tank || missing))} stops` : `add ${L(missing)}`;
         cls = fill ? 'bad' : 'warn';
+        add = Math.ceil(Math.min(missing, room));
       }
     }
     const fin = `<small>To finish</small><b>${main}</b><span>${sub}</span>`;
     const box = q('#fu-fin');
     box.className = 'fu-fin ' + cls;
     if (box.innerHTML !== fin) box.innerHTML = fin;
+
+    // sets the fuel of the next stop in iRacing's pit menu, lit while the menu matches the plan
+    const set = st.pit?.fuel || 0, btn = q('#fu-set');
+    const show = st.pit?.ok && add != null && (add > 0 || set > 0);
+    const done = show && Math.abs(set - add) < 1;
+    btn.hidden = !show;
+    btn.classList.toggle('on', !!done);
+    this.add = add;
+    const label = !show ? '' : add ? `<small>${done ? 'Pit set' : 'Set pit'}</small><b>+${fmt.vol(add).toFixed(0)} ${fmt.volU()}</b>` : '<small>Pit</small><b>No fuel</b>';
+    if (label !== this.label) { btn.innerHTML = this.label = label; }
   },
 };

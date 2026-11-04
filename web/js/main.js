@@ -18,7 +18,6 @@ const S = {
   meta: {},
   track: null,         // {key, status, ver, points}
   wxHist: [],
-  sel: null,           // selected carIdx (click a row)
   connected: false,
   ws: null,
   send(obj) { if (S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify(obj)); },
@@ -53,7 +52,7 @@ function invalidate() {
   dirty = true;
   if (!queued) { queued = true; requestAnimationFrame(frame); }
 }
-addEventListener('click', invalidate);   // a row selected, a mode changed: show it even with the sim paused
+addEventListener('click', invalidate);   // a mode changed: show it even with the sim paused
 addEventListener('input', invalidate);
 // ---- UI scale: ?zoom=1.2 for this screen, or +/- keys (saved), 0 resets ----------------
 function setZoom(z) {

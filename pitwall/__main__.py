@@ -29,6 +29,9 @@ def main():
     p.add_argument("--mock-session", default="race", choices=["race", "qualify", "practice", "test"],
                    help="session type the simulator pretends to be (with --mock)")
     p.add_argument("--mock-track", type=int, default=9999, help="TrackID the simulator reports, e.g. 229 for COTA (with --mock)")
+    p.add_argument("--mock-start", type=float, default=0.0, help="start the simulator at this session time, in seconds (rain from 1900)")
+    p.add_argument("--mock-cam", default=None, help="car the simulator focuses on: a car index, or 'cycle' (with --mock)")
+    p.add_argument("--mock-wide", action="store_true", help="bigger field: six classes, 44 cars (with --mock)")
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--lan", action="store_true", help="listen on your local network (phone/tablet access)")
     p.add_argument("--hz", type=float, default=20.0, help="updates per second sent to the browser")
@@ -37,7 +40,9 @@ def main():
     args = p.parse_args()
 
     stypes = {"race": "Race", "qualify": "Open Qualify", "practice": "Practice", "test": "Offline Testing"}
-    source = MockSource(speed=args.speed, session=stypes[args.mock_session], track_id=args.mock_track) if args.mock else IRacingSource()
+    cam = int(args.mock_cam) if (args.mock_cam or "").isdigit() else args.mock_cam
+    source = (MockSource(speed=args.speed, session=stypes[args.mock_session], track_id=args.mock_track,
+                         start=args.mock_start, cam=cam, wide=args.mock_wide) if args.mock else IRacingSource())
     mapper = TrackMapper(args.maps_dir, flip=args.flip_map)
     engine = Engine(mapper)
     app = App(source, engine, hz=args.hz).build()

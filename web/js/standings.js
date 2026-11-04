@@ -1,4 +1,42 @@
 import { esc, lapTime, gapText, prefs, savePrefs, flagHtml, makeHtml, stHtml, talkHtml, tyreHtml, HELMET, OUT, flagFx, irHtml, pitHtml, ST, fitIr, irKeyOf, INV, patchRows } from './util.js';
+import { driverActions } from './drivers.js';
+
+const ROW = 30, ME = 44;   // .rrow / .rrow.me with its margins, px in the panel's scale
+
+/**
+ * The list scrolls a whole row at a time, so nobody is ever cut in half. Which rows show: the class
+ * headers, the class leaders and the reference driver with the 3 cars either side are always there,
+ * in their place, and the rest of the panel is a window over the other rows. If it is too short for
+ * all of that, the least important go.
+ */
+function visibleRows(rows, ref, drivers, room, from) {
+  if (!room) return { list: rows, start: 0, max: 0, slots: rows.length, free: rows.length };
+  const at = rows.findIndex((r) => r.i === ref);
+  const near = (n) => {
+    const out = at < 0 ? [] : [at];
+    for (let j = at - 1; at >= 0 && j >= 0 && j >= at - n && rows[j].i != null; j--) out.push(j);
+    for (let j = at + 1; at >= 0 && j < rows.length && j <= at + n && rows[j].i != null; j++) out.push(j);
+    return out;
+  };
+  const heads = [], leaders = [], seen = new Set();
+  rows.forEach((r, k) => {
+    if (r.i == null) { if (r.key !== 'none') heads.push(k); return; }
+    const cls = drivers[r.i]?.cls;
+    if (!seen.has(cls)) { seen.add(cls); leaders.push(k); }
+  });
+  const height = (list) => [...list].reduce((sum, k) => sum + (rows[k].i === ref ? ME : ROW), 0);
+  let pins = new Set();
+  for (const tier of [[...heads, ...leaders, ...near(3)], [...heads, ...near(3)], [...heads, ...near(1)]]) {
+    const set = new Set(tier);
+    if (height(set) <= room - 2 * ROW) { pins = set; break; }   // always leave something to scroll
+  }
+  const others = rows.filter((r, k) => !pins.has(k));
+  const slots = Math.floor((room - height(pins)) / ROW);
+  const max = Math.max(0, others.length - slots);
+  const start = Math.min(from, max);
+  const shown = new Set(others.slice(start, start + slots));
+  return { list: rows.filter((r, k) => pins.has(k) || shown.has(r)), start, max, slots, free: others.length };
+}
 
 /**
  * Standings. Multiclass-aware: by default cars are grouped per class (each with
@@ -30,10 +68,27 @@ export const standings = {
         prefs.classFilter = prefs.classFilter === id ? null : id;
         savePrefs(); return;
       }
-      const row = e.target.closest('.srow[data-i]');
-      if (row) { const i = Number(row.dataset.i); S.sel = S.sel === i ? null : i; }
     });
+    driverActions(root, S);
     this.lastCtl = '';
+    // how many rows fit depends on the panel, not on the data: measured only when it resizes
+    new ResizeObserver(() => { this.room = this.body.clientHeight; S.invalidate(); }).observe(this.body);
+    this.from = this.max = this.wheel = 0;
+    const scroll = (n) => {
+      const from = Math.max(0, Math.min(this.max, this.from + n));
+      if (from !== this.from) { this.from = from; S.invalidate(); }
+    };
+    this.body.addEventListener('wheel', (e) => {
+      this.wheel += e.deltaY;
+      const n = Math.trunc(this.wheel / 40);
+      if (n) { this.wheel -= n * 40; scroll(n); }
+    }, { passive: true });
+    let touch = 0;
+    this.body.addEventListener('touchstart', (e) => { touch = e.touches[0].clientY; }, { passive: true });
+    this.body.addEventListener('touchmove', (e) => {
+      const n = Math.trunc((touch - e.touches[0].clientY) / ROW);
+      if (n) { touch -= n * ROW; scroll(n); }
+    }, { passive: true });
   },
 
   update(S) {
@@ -108,7 +163,7 @@ export const standings = {
         delta(c, 0), delta(c, 1), delta(c, 2),
         ['sflag', `${talkHtml(st.talk === c.i)}<span class="fxw" style="${flagFx('s' + c.i, c.fl)}">${stHtml(c, true)}</span>`],
       );
-      return { key: c.i, i: c.i, cls: `rrow srow ${over ? 'over' : ''} ${me ? 'me' : ''} ${S.sel === c.i ? 'sel' : ''} ${!over && (off || c.pit) ? 'pitrow' : ''}`, cells };
+      return { key: c.i, i: c.i, cls: `rrow srow ${over ? 'over' : ''} ${me ? 'me' : ''} ${!over && (off || c.pit) ? 'pitrow' : ''}`, cells };
     };
 
     // class header = title row: class, drivers and SOF over pos..iR, then the column titles
@@ -131,29 +186,38 @@ export const standings = {
       for (const c of all) rows.push(rowHtml(c, false));
     }
     if (!rows.length) rows.push({ key: 'none', cls: 'map-note', html: '<b>No cars yet</b>Cars appear here as soon as they are on track.' });
-    patchRows(this.body, rows);
-    fitIr(this.body, irKeyOf(S, st.cars));
+    // the chips are as wide as the widest in the whole field, hidden rows included: measure with them all
+    const irKey = irKeyOf(S, st.cars);
+    if (irKey !== this.irKey) {
+      patchRows(this.body, rows);
+      if (fitIr(this.body, irKey)) this.irKey = irKey;
+    }
+    const v = visibleRows(rows, st.me.i, S.drivers, this.room, this.from);
+    this.from = v.start; this.max = v.max;
+    patchRows(this.body, v.list);
+    const thumb = v.max ? `--tt:${(100 * v.start / v.free).toFixed(1)}%;--th:${(100 * v.slots / v.free).toFixed(1)}%` : '';
+    if (thumb !== this.thumb) { this.body.style.cssText = thumb; this.thumb = thumb; }
 
     // "you" summary bar
     const m = st.me, mc = st.cars.find((c) => c.i === m.i);
     if (mc) {
-      // incidents: current / next penalty / DQ; yellow 8x before the next limit, red 4x before
+      // incidents: current / next penalty / DQ; by how far the next limit is: green, white at 12x, amber at 8x, red at 4x
       const inc = m.inc ?? null;
       let pen = m.incPen;
       if (pen && inc != null && inc >= pen && m.incPenNext) pen += Math.ceil((inc - pen + 1) / m.incPenNext) * m.incPenNext;
       const limits = [pen, m.incDq].filter((x) => x && inc != null && x > inc);
       const toGo = limits.length ? Math.min(...limits) - inc : null;
-      const incCls = toGo == null ? '' : toGo <= 4 ? 'neg' : toGo <= 8 ? 'warn' : '';
-      const incTxt = inc == null ? '–' : [inc, pen, m.incDq].filter((x) => x != null).map((x) => x + 'x').join('/');
+      const incCls = toGo == null ? '' : toGo <= 4 ? 'neg' : toGo <= 8 ? 'warn' : toGo <= 12 ? '' : 'pos';
+      const incMax = [pen, m.incDq].filter((x) => x != null).map((x) => `/${x}x`).join('');   // the limits, smaller and never coloured
       const g = m.irGain;
       const bar = `
-        <div class="kv"><small>Position</small><b>${mc.p != null ? `P${mc.p}` : '–'}${multi && mc.p != null ? ` · C${mc.cp}` : ''}</b></div>
+        <div class="kv"><small>Position</small><b>${mc.cp != null ? `P${mc.cp}` : '–'}${multi && mc.p != null ? `<span class="of">P${mc.p}</span>` : ''}</b></div>
         <div class="kv"><small>Lap</small><b>${m.lap ?? '–'}${isRace && !over && st.session.raceLaps ? `<span class="of">/${st.session.raceLaps}${st.session.raceLapsEst ? '*' : ''}</span>` : ''}</b></div>
         ${over ? '' : `<div class="kv"><small>Last</small><b>${lapTime(m.last)}${m.lastx && m.last ? INV : ''}</b></div>`}
         <div class="kv"><small>Best</small><b>${lapTime(m.best)}</b></div>
 ` + (st.session?.kind === 'practice' ? '' : `
         <div class="kv"><small>iRating</small><b class="${g == null ? '' : g >= 0 ? 'pos' : 'neg'}">${g == null ? '–' : (g > 0 ? '+' : '') + g}</b></div>
-        <div class="kv"><small>Incidents</small><b class="${incCls}">${incTxt}</b></div>`);   // practice: nothing at stake
+        <div class="kv"><small>Incidents</small><b><span class="${incCls}">${inc == null ? '–' : inc + 'x'}</span>${inc != null && incMax ? `<span class="of">${incMax}</span>` : ''}</b></div>`);   // practice: nothing at stake
       if (bar !== this.lastBar) { this.meBar.innerHTML = bar; this.lastBar = bar; }
     }
   },
