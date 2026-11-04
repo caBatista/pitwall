@@ -119,12 +119,10 @@ export const standings = {
     const myCar = st.cars.find((c) => c.i === st.me.i) || {};
     const myLaps = myCar.lh || [];
     // their k-th latest lap minus my k-th latest: + they are slower, - they are faster
-    // (* = one of the two laps was invalidated / had an incident)
     const delta = (c, k) => {
       if (c.i === st.me.i || c.lh?.[k] == null || myLaps[k] == null) return ['dl', ''];
       const v = Math.round((c.lh[k] - myLaps[k]) * 10) / 10;
-      const x = c.lx?.[k] || myCar.lx?.[k];
-      return [`dl ${v > 0 ? 'slower' : v < 0 ? 'faster' : ''}`, `${v > 0 ? '+' : ''}${v.toFixed(1)}${x ? INV : ''}`];
+      return [`dl ${v > 0 ? 'slower' : v < 0 ? 'faster' : ''}`, `${v > 0 ? '+' : ''}${v.toFixed(1)}`];
     };
 
     // race over: the results, nothing live - no tags but the chequered flag (finished), no tyre / int / gap / last / delta

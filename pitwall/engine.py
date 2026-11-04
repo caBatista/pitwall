@@ -252,6 +252,8 @@ class Engine:
         self._seen_last = {}   # car -> CarIdxLastLapTime last seen (a change = a new lap)
         self._race_laps = None  # (my race length in laps, estimated?)
         self.tyre_on = None     # "dry" / "wet" on my car
+        self.pit_in = False     # this frame I entered the pit lane, in a race under green
+        self._on_pit, self._fuel_now = True, (None, None, None)   # (level, clean average, laps left)
         self._want, self._want_raw, self._want_t = None, None, 0.0   # tyre the weather asks for (held 5 s)
         self._mark, self._line, self._pend_lap, self._lap_t = {}, {}, {}, {}   # own lap timing (invalid laps)
         self._inc_line = None   # my incident count when my last lap ended
@@ -363,6 +365,16 @@ class Engine:
     def tyre_index(self, kind):
         """Compound index iRacing uses for "dry" / "wet", None if this car doesn't have it."""
         return next((i for i, k in sorted(self.tyres.items()) if k == kind), None)
+
+    def fuel_needed(self, reserve, laps):
+        """Litres to finish with reserve (in laps) in the tank: 0 if the tank already has it, None if
+        there is no clean average yet. laps: the race length typed in, when the session doesn't give one."""
+        level, avg, left = self._fuel_now
+        target = left if left is not None else laps
+        if not avg or level is None or target is None:
+            return None
+        need = (target + reserve) * avg - level
+        return max(0.0, min(need, self.tank - level) if self.tank else need)
 
     def update(self, raw):
         t = float(raw.get("SessionTime") or 0.0)
@@ -785,6 +797,10 @@ class Engine:
             self._want_raw, self._want_t = want, t
         if t - self._want_t >= 5:
             self._want = want
+        on_pit = bool(raw.get("OnPitRoad"))
+        self.pit_in = on_pit and not self._on_pit and racing
+        self._on_pit = on_pit
+        self._fuel_now = (fuel_l, self.fuel.avg, laps_left)
         pit = {
             "ok": bool(raw.get("IsOnTrack")),   # iRacing only takes pit commands from the car
             "tyre": self.tyre_on, "tyreSet": self.tyres.get(raw.get("PitSvTireCompound"), self.tyre_on),

@@ -32,12 +32,6 @@ export function clock(sec) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-export function tod(sec) {
-  if (sec == null) return '--:--';
-  sec = Math.floor(sec) % 86400;
-  return `${String(Math.floor(sec / 3600)).padStart(2, '0')}:${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}`;
-}
-
 // ---- flags & car makes ----------------------------------------------------
 // iRacing gives the flair as an English country name ("Czechia", "England");
 // build name -> ISO code from the browser's own region names.
@@ -293,7 +287,7 @@ const KEY = 'pitwall.prefs.v1';
 export const prefs = (() => {
   let p = {};
   try { p = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { /* ignore */ }
-  return Object.assign({ units: 'metric', standMode: 'class', classFilter: null, relRows: 3, zoom: 1.1, reserve: 0.5, targetLaps: 10 }, p);
+  return Object.assign({ units: 'metric', standMode: 'class', classFilter: null, relRows: 3, zoom: 1.1, reserve: 0.5, targetLaps: 10, autoFuel: true }, p);
 })();
 export function savePrefs() {
   try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ }
@@ -307,6 +301,4 @@ export const fmt = {
   volU: () => (imp() ? 'gal' : 'L'),
   speed: (ms) => (ms == null ? null : imp() ? ms * 2.23694 : ms * 3.6),
   speedU: () => (imp() ? 'mph' : 'km/h'),
-  press: (pa) => (pa == null ? null : imp() ? pa * 0.0002953 : pa / 100),
-  pressU: () => (imp() ? 'inHg' : 'hPa'),
 };

@@ -61,6 +61,7 @@ class App:
         self._drivers_ver = -1
         self._wx_sent = 0.0
         self._connected = False
+        self.auto_fuel = None   # (reserve, laps) with Auto fuel on, from the fuel card
 
     # ---- websocket ---------------------------------------------------------
     async def ws(self, request):
@@ -81,8 +82,8 @@ class App:
                         continue
                     if data.get("cmd") == "reset_map":
                         self.engine.mapper.reset()
-                    elif data.get("cmd") == "pit_fuel":
-                        self.pit_fuel(data.get("liters"))
+                    elif data.get("cmd") == "auto_fuel":
+                        self.set_auto_fuel(data)
                     elif data.get("cmd") == "pit_tyre":
                         self.pit_tyre(data.get("tyre"))
                     elif data.get("cmd") == "focus":
@@ -94,6 +95,12 @@ class App:
         return ws
 
     # ---- pit commands from the fuel / weather cards -------------------------
+    def set_auto_fuel(self, data):
+        try:
+            self.auto_fuel = (float(data.get("reserve")), float(data.get("laps"))) if data.get("on") else None
+        except (TypeError, ValueError):
+            self.auto_fuel = None
+
     def pit_fuel(self, liters):
         try:
             self.source.pit_fuel(max(0, min(math.ceil(float(liters)), math.ceil(self.engine.tank) or 1000)))
@@ -163,6 +170,10 @@ class App:
         if not self.engine.drivers:
             return
         state = self.engine.update(raw)
+        if self.engine.pit_in and self.auto_fuel:
+            liters = self.engine.fuel_needed(*self.auto_fuel)
+            if liters is not None:   # no clean lap yet: the menu stays as it is
+                self.pit_fuel(liters)
         out = []
         if self.engine.drivers_ver != self._drivers_ver:
             self._drivers_ver = self.engine.drivers_ver

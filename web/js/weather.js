@@ -1,20 +1,18 @@
-import { fmt, tod, tyreHtml } from './util.js';
+import { fmt, tyreHtml } from './util.js';
 
 const SKIES = ['Clear', 'Partly cloudy', 'Mostly cloudy', 'Overcast'];
 const WET = ['Dry', 'Mostly dry', 'Very lightly wet', 'Lightly wet', 'Moderately wet', 'Very wet', 'Extremely wet'];
 
 /**
  * Weather monitor. iRacing exposes the *current* conditions only (no forecast),
- * so this shows trends over the last hour instead: temperature drift, rain
- * arriving, track getting wetter or drying out.
+ * so the temperatures carry their trend over the last minutes instead.
  */
 export const weather = {
   id: 'w-weather',
   mount(root, S) {
     root.innerHTML = `
       <div class="card-h"><div class="ttl"><i></i>Weather</div>
-        <button class="pit-btn tyre-btn" id="wx-tyre" hidden></button>
-        <div class="leg"><span><i style="background:var(--amber)"></i>Track</span><span><i style="background:var(--txt)"></i>Air</span></div></div>
+        <button class="pit-btn tyre-btn" id="wx-tyre" hidden></button></div>
       <div class="wx" id="wx-grid"></div>`;
     this.grid = root.querySelector('#wx-grid');
     this.grid.innerHTML = `
@@ -28,16 +26,10 @@ export const weather = {
       <div class="kv"><small>Rain</small><b id="wx-pr">–</b></div>
       <div class="kv"><small>Humidity · Fog</small><b id="wx-hu">–</b></div>
       <div class="kv"><small>Skies</small><b id="wx-sk" style="font-size:13px">–</b></div>
-      <div class="kv"><small>Grip</small><b id="wx-gr" style="font-size:13px">–</b></div>
-      <div class="kv"><small>Pressure · Time</small><b id="wx-pt" style="font-size:13px">–</b></div>
-      <div class="wx-chart"><canvas id="wx-cv"></canvas></div>`;
+      <div class="kv"><small>Grip</small><b id="wx-gr" style="font-size:13px">–</b></div>`;
     const q = (s) => root.querySelector(s);
     this.q = q;
-    this.cv = q('#wx-cv');
-    this.ctx = this.cv.getContext('2d');
-    this.drawn = 0;
     q('#wx-tyre').addEventListener('click', () => { if (this.tyre) S.send({ cmd: 'pit_tyre', tyre: this.tyre }); });
-    new ResizeObserver(() => { this.drawn = 0; }).observe(this.cv.parentElement);
   },
 
   trend(hist, col, unit) {
@@ -86,8 +78,6 @@ export const weather = {
     q('#wx-sk').textContent = w.skies == null ? '–' : SKIES[w.skies] || '–';
     // rubber on the racing line, as iRacing words it ("slight usage", "moderate usage", ...)
     q('#wx-gr').textContent = w.grip ? w.grip[0].toUpperCase() + w.grip.slice(1) : '–';
-    const p = fmt.press(w.press);
-    q('#wx-pt').textContent = `${p == null ? '–' : p.toFixed(fmt.pressU() === 'hPa' ? 0 : 2) + ' ' + fmt.pressU()} · ${tod(w.tod)}`;
 
     // weather turning (or a change already set): the tyre for the next stop, click again to undo
     const pit = st.pit || {}, set = pit.tyreSet !== pit.tyre, to = set ? pit.tyreSet : pit.want;
@@ -97,32 +87,5 @@ export const weather = {
     btn.classList.toggle('on', set);
     const label = show ? `${tyreHtml(to)}<b>${to.toUpperCase()}</b>` : '';
     if (label !== this.label) { btn.innerHTML = this.label = label; }
-
-    // chart, redraw when history grows or on resize
-    const key = h.length + ':' + (h.length ? h[h.length - 1][0] : 0) + fmt.tempU();
-    if (key !== this.drawn) { this.drawn = key; this.chart(h); }
-  },
-
-  chart(h) {
-    const cv = this.cv, r = cv.parentElement.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
-    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
-    const c = this.ctx; c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const W = r.width, H = r.height;
-    c.clearRect(0, 0, W, H);
-    if (h.length < 2) return;
-    const tr = h.map((p) => fmt.temp(p[2])), ai = h.map((p) => fmt.temp(p[1]));
-    const all = tr.concat(ai), lo = Math.min(...all) - 1, hi = Math.max(...all) + 1;
-    const x = (k) => (k / (h.length - 1)) * (W - 2) + 1, y = (v) => H - 4 - ((v - lo) / (hi - lo || 1)) * (H - 10);
-    // rain bars
-    h.forEach((p, k) => {
-      if (p[4] > 0.02 || p[3] > 2) {
-        c.fillStyle = `rgba(244,242,236,${Math.min(0.22, 0.06 + p[4] * 0.3)})`;
-        c.fillRect(x(k) - 1, 0, Math.max(2, W / h.length), H);
-      }
-    });
-    const line = (arr, col) => { c.beginPath(); arr.forEach((v, k) => (k ? c.lineTo(x(k), y(v)) : c.moveTo(x(k), y(v)))); c.strokeStyle = col; c.lineWidth = 1.8; c.lineJoin = 'round'; c.stroke(); };
-    line(ai, '#f4f2ec'); line(tr, '#f4b400');
-    c.font = '600 10px Montserrat, sans-serif'; c.fillStyle = '#8a8a8f'; c.textAlign = 'left';
-    c.fillText(hi.toFixed(0), 2, 9); c.fillText(lo.toFixed(0), 2, H - 1);
   },
 };

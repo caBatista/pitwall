@@ -320,29 +320,66 @@ svg.tyre.wet { color: var(--blue); }
 .ghost-btn:hover { color: var(--txt); border-color: var(--mute); }
 
 /* ---------- fuel ---------- */
-/* level as a bar; everything but the big number in Montserrat SemiBold */
-.fuel { display: flex; flex-direction: column; gap: 10px; padding: 4px 14px 14px; font-family: var(--num); }
-.fu-lvl { display: flex; align-items: baseline; gap: 6px; }
-.fu-lvl b { font: 900 40px/.82 var(--display); color: var(--accent); }
-.fu-lvl small { color: var(--dim); font: 600 12px var(--num); }
-.fu-lvl span { margin-left: auto; color: var(--dim); font: 600 11px var(--num); }
+/* level as a bar, readings as label + value; everything but the big number in Montserrat SemiBold */
+.fuel { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; padding: 2px 14px 14px; font-family: var(--num); }
+.fu-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "lvl wheel" "rows wheel"; gap: 12px 10px; align-items: center; }
+.fu-lvl { grid-area: lvl; display: grid; gap: 9px; min-width: 0; }
+.fu-val { display: flex; align-items: baseline; gap: 6px; }
+.fu-val b { font: 900 40px/.82 var(--display); color: var(--accent); }
+.fu-val small { color: var(--dim); font: 600 12px var(--num); }
+.fu-val span { margin-left: auto; color: var(--dim); font: 600 11px var(--num); }
 .fu-bar { height: 10px; border-radius: 3px; background: var(--line); overflow: hidden; }
 .fu-bar i { display: block; height: 100%; background: var(--accent); transition: width .4s; }
 .fu-bar i.still { transition: none; }
 .fu-bar i.mid { background: var(--accent-deep); }
 .fu-bar i.low { background: var(--red); }
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 12px; }
-.fuel .kv small { font: 600 9.5px var(--num); letter-spacing: .04em; }
-.fuel .kv b { font: 600 15px var(--num); }
-.fuel .kv .est { color: var(--accent); text-transform: none; }
-.fu-fin {   /* TO FINISH: same surface as the other blocks */
-  display: grid; grid-template-columns: auto 1fr; align-items: baseline; column-gap: 12px; padding: 10px 12px;
-  border-radius: 6px; background: var(--card-2);
+.fu-rows { grid-area: rows; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; min-width: 0; }
+.fu-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; height: 25px; color: var(--dim); font: 600 11px var(--num); white-space: nowrap; }
+.fu-row[hidden] { display: none; }
+.fu-row b, .fu-row .num-in {
+  width: 60px; padding: 3px 6px; box-sizing: border-box; border: 0; border-radius: 4px; background: var(--card-2); color: var(--txt);
+  font: 600 12px/16px var(--num); font-variant-numeric: tabular-nums; text-align: right;
 }
+.fu-row .num-in:disabled { opacity: 1; }
+.fu-row .num-in::-webkit-inner-spin-button { display: none; }
+.fu-row .num-in:not(:disabled) { outline: 1px solid var(--line-2); }
+/* reserve: a wheel of values, apart from the readings */
+.fu-wheel { grid-area: wheel; display: grid; justify-items: center; gap: 4px; padding-left: 10px; border-left: 1px solid var(--line); cursor: ns-resize; touch-action: none; user-select: none; outline: none; }
+.fu-wheel[hidden] { display: none; }
+.fu-wheel small { color: var(--dim); font: 600 9.5px var(--num); letter-spacing: .04em; text-transform: uppercase; }
+.fu-win {
+  position: relative; width: 40px; height: 100px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(transparent, #000 38%, #000 62%, transparent); mask-image: linear-gradient(transparent, #000 38%, #000 62%, transparent);
+}
+.fu-win::before { content: ""; position: absolute; left: 0; right: 0; top: 40px; height: 20px; border-radius: 4px; background: var(--card-2); }
+.fu-wheel:focus-visible .fu-win::before { outline: 1px solid var(--line-2); }
+.fu-list { position: relative; display: grid; transform: translateY(calc((2 - var(--at, 0)) * 20px)); }
+.fu-list.slide { transition: transform .15s; }
+.fu-list span { height: 20px; color: var(--dim); font: 600 12px/20px var(--num); font-variant-numeric: tabular-nums; text-align: center; }
+.fu-list span.on { color: var(--accent); }
+.fu-fin {   /* TO FINISH: title on top, then the plan on the left and the fuel on the right */
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px 12px; padding: 9px 12px 10px;
+  border-radius: 8px; background: var(--card-2); text-transform: uppercase;
+}
+.fu-fin[hidden] { display: none; }
+.fu-fin > small { grid-column: 1 / -1; color: var(--txt); font: 700 9.5px var(--num); letter-spacing: .06em; }
+.fu-l, .fu-r { display: grid; gap: 4px; align-content: end; min-width: 0; }
+.fu-r { justify-items: end; }
+.fu-l small { color: var(--dim); font: 600 9px var(--num); letter-spacing: .04em; white-space: nowrap; }
+.fu-l b, .fu-r b { font: 700 19px/1 var(--num); font-variant-numeric: tabular-nums; color: var(--txt); white-space: nowrap; }
+.fu-l b { font-size: 16px; }
+.fu-r b small { margin-left: 1px; color: var(--dim); font: 700 10px var(--num); }
+.fu-r > span { order: 1; color: var(--dim); font: 600 13px/1 var(--num); }
+.fu-r:has(> span:empty) { align-content: start; }
+.fu-fin.ok .fu-r b span { color: var(--green); }
+.switch { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; color: var(--dim); font: 600 10.5px var(--num); letter-spacing: .04em; text-transform: uppercase; }
+.switch[hidden] { display: none; }
+.switch input { position: absolute; opacity: 0; pointer-events: none; }
+.switch i { position: relative; width: 26px; height: 14px; border-radius: 7px; background: var(--line-2); }
+.switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--txt); }
+.switch input:checked + i { background: var(--accent); }
+.switch input:checked + i::after { left: 14px; background: var(--ink); }
 /* pit commands: amber outline, filled once iRacing's pit menu has it */
-.fu-plan { display: flex; gap: 8px; }
-.fu-plan[hidden] { display: none; }
-.fu-plan .fu-fin { flex: 1; min-width: 0; }
 .pit-btn {
   display: grid; place-items: center; align-content: center; gap: 2px; padding: 4px 10px; flex-shrink: 0; cursor: pointer;
   background: none; border: 1px solid var(--accent); border-radius: 6px; color: var(--accent);
@@ -352,28 +389,17 @@ svg.tyre.wet { color: var(--blue); }
 .pit-btn.on { background: var(--accent); color: var(--ink); }
 .pit-btn small { font: 600 9.5px var(--num); letter-spacing: .06em; text-transform: uppercase; }
 .pit-btn b { font: 600 13px var(--num); }
-.tyre-btn { margin: -9px 10px -5px auto; padding: 2px 8px; gap: 1px; }
-.tyre-btn svg.tyre { display: block; width: 17px; height: 17px; }
-.tyre-btn b { font: 600 9px/1 var(--mono); letter-spacing: .08em; }
-.fu-fin small { grid-row: span 2; align-self: center; color: var(--dim); font: 600 10px var(--num); letter-spacing: .06em; text-transform: uppercase; }
-.fu-fin b { font: 600 17px var(--num); color: var(--txt); }
-.fu-fin span { font: 600 12px var(--num); color: var(--dim); }
-.fu-fin.ok span { color: var(--green); }
-.fu-fin.warn b { color: var(--accent); }
-.fu-fin.bad b { color: var(--red); }
-.fuel-ctl { display: flex; align-items: center; gap: 8px; color: var(--dim); font: 600 10.5px var(--num); letter-spacing: .04em; text-transform: uppercase; }
-.num-in {
-  width: 52px; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 7px; color: var(--txt); font: 600 12px var(--mono);
-  padding: 3px 6px; text-align: right;
-}
+.tyre-btn { margin-left: auto; padding: 3px 12px; gap: 1px; }
+.tyre-btn svg.tyre { display: block; width: 20px; height: 20px; }
+.tyre-btn b { font: 600 10px/1 var(--mono); letter-spacing: .08em; }
 
 /* ---------- weather ---------- */
 .wx { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 14px; padding: 0 14px 8px; }
-#w-weather .card-h { padding-bottom: 4px; min-height: 36px; }
+#w-weather .card-h { padding-bottom: 4px; min-height: 61px; }   /* the tyre button fits: nothing jumps when it shows */
 .wx-temp { display: flex; align-items: baseline; gap: 6px; }
-.wx-temp b { font: 900 40px/.82 var(--display); }
+.wx-temp b { font: 900 30px/.82 var(--display); }
 /* weather: everything but the big temperatures in Montserrat SemiBold */
-.wx .kv small, .wx-temp em, .wx .trend, #w-weather .leg { font-family: var(--num); font-weight: 600; letter-spacing: .02em; }
+.wx .kv small, .wx-temp em, .wx .trend { font-family: var(--num); font-weight: 600; letter-spacing: .02em; }
 .wx .kv b { font-family: var(--num); font-weight: 600; }
 .wx-temp em { font-style: normal; color: var(--dim); font-size: 12px; }
 .trend { font: 700 11px var(--mono); }
@@ -383,10 +409,6 @@ svg.tyre.wet { color: var(--blue); }
 .wet i.on { background: var(--txt); } .wet i.on.dry { background: var(--accent); }
 .compass { position: relative; width: 64px; height: 64px; border-radius: 50%; border: 1px solid var(--line-2); background: radial-gradient(circle, var(--bg-2), transparent 70%); }
 .compass svg { position: absolute; inset: 0; }
-.wx-chart { grid-column: 1 / -1; position: relative; height: 30px; margin-top: 2px; }
-.wx-chart canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-.leg { display: flex; gap: 12px; font: 500 10px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
-.leg i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
 
 /* ---------- overlay ---------- */
 .overlay {
