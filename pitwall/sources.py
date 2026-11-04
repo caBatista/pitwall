@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import math
 import random
+import threading
 import time
 
-from . import chat
+from . import chat, simwindow
 
 # Everything the engine needs, nothing more: fewer reads per tick = lower CPU.
 SCALARS = [
@@ -49,6 +50,7 @@ class IRacingSource:
             raise SystemExit("pyirsdk is not installed. Run: pip install -r requirements.txt")
         self.ir = irsdk.IRSDK()
         self._info_tick = None
+        threading.Thread(target=simwindow.watch, daemon=True).start()
 
     def poll(self):
         ir = self.ir

@@ -90,6 +90,8 @@ const on = new Set(widgets.map(([w]) => w));
 setZoom(Number(params.get('zoom')) || prefs.zoom);
 addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.('input')) return;
+  // desktop app (pywebview): the native window doesn't reload on its own
+  if (e.key === 'F5' && window.pywebview?.api) { e.preventDefault(); location.reload(); return; }
   // desktop app (pywebview): F11 toggles full screen of the native window
   if (e.key === 'F11' && window.pywebview?.api) { e.preventDefault(); window.pywebview.api.fullscreen(); return; }
   const step = { '+': 0.05, '=': 0.05, '-': -0.05 }[e.key];

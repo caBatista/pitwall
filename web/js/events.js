@@ -2,7 +2,7 @@ import { esc, lapTime, prefs, savePrefs } from './util.js';
 
 /**
  * Race Events: for when the driver is out of the car. Two views:
- * Events: the session of the reference driver, whoever that is at the moment.
+ * Events: my session, whatever car is on camera; the Focused filter follows the car on camera instead.
  * Accidents: the ones that count, loss of control and contact (2x, 4x), and the cautions. The points are
  * iRacing's; a ~ marks an estimate, for when it hasn't published them yet (see events.py).
  * Every session of the event is in the same list, a break between one and the next.
@@ -61,11 +61,12 @@ export const events = {
   mount(root, S) {
     this.root = root; this.S = S; this.drawn = ''; this.view = 'events'; this.solo = !!new URLSearchParams(location.search).get('w');
     prefs.evOff ??= [];   // groups switched off
+    prefs.evWho ??= 'me';   // me | focus
     root.innerHTML = `
       <div class="card-h"><div class="ttl">Race events</div><div class="ctl">
         <div class="seg ev-view"><button data-view="events">Events</button><button data-view="accidents">Accidents</button></div>
       </div></div>
-      <div class="ev-kinds">${Object.entries(GROUPS).map(([k, n]) => `<button data-group="${k}">${n}</button>`).join('')}</div>
+      <div class="ev-kinds"><div class="seg ev-who"><button data-who="me">Me</button><button data-who="focus">Focused</button></div>${Object.entries(GROUPS).map(([k, n]) => `<button data-group="${k}">${n}</button>`).join('')}</div>
       <div class="ev-body"></div>
       <div class="ev-live" hidden><span>Replay <b></b> behind live</span><button class="ghost-btn" data-live>Back to live</button></div>`;
     this.body = root.querySelector('.ev-body');
@@ -84,6 +85,7 @@ export const events = {
       }
       if ('live' in d) { this.on = null; S.send({ cmd: 'replay_live' }); return; }
       if (d.view) this.view = d.view;
+      else if (d.who) { prefs.evWho = d.who; savePrefs(); }
       else if (d.group) { prefs.evOff = prefs.evOff.includes(d.group) ? prefs.evOff.filter((g) => g !== d.group) : [...prefs.evOff, d.group]; savePrefs(); } else return;
       this.update(S);
     });
@@ -106,20 +108,25 @@ export const events = {
         sn = e.sn; lap = null;
         if (several) html += `<div class="ev-sess">${SESSIONS[e.sk] || esc(e.sk ?? '')}</div>`;
       }
-      const mine = e.i === ref ? e.cl : e.j === ref ? e.cj : null;   // the lap of the reference driver, not mine
+      // the lap of the driver in the filter; lists saved before each car had its own only know mine (lap)
+      const own = (who, lap) => lap ?? (who === S.st?.session?.player ? e.lap : null) ?? null;
+      const mine = e.i === ref ? own(e.i, e.cl) : e.j === ref ? own(e.j, e.cj) : null;
+      const at = acc ? own(e.i, e.cl) : mine ?? own(e.i, e.cl);
       if (!acc && mine > (lap ?? 0)) { lap = mine; html += `<div class="ev-lap">Lap ${lap}</div>`; }
       const color = S.classMap.get(S.drivers[e.i]?.cls)?.color;
       html += `<button id="ev${e.id}" class="ev ${tone(e, ref)} g-${GROUP_OF[e.k] || 'flag'} k-${e.k}${`ev${e.id}` === this.on ? ' on' : ''}" data-id="${e.id}"${color ? ` style="--cc:${color}"` : ''}>
-        <em>${TAG[e.k] || ''}</em><span>${line(S, e, ref)}</span><time title="${clock(e.t)}">${e.cl ? `L${acc ? e.cl : mine ?? e.cl}` : clock(e.t)}</time></button>`;
+        <em>${TAG[e.k] || ''}</em><span>${line(S, e, ref)}</span><time title="${clock(e.t)}">${at ? `L${at}` : clock(e.t)}</time></button>`;
     }
     return html;
   },
 
   update(S) {
     if (!S.st?.session || (!this.solo && !document.body.hasAttribute('data-out'))) return;
-    const s = S.st.session, ref = S.st.me?.i;
+    const s = S.st.session;
+    const ref = prefs.evWho === 'focus' ? S.st.me?.i : s.player ?? S.st.me?.i;
     const acc = this.view === 'accidents';
     for (const b of this.root.querySelectorAll('[data-view]')) b.classList.toggle('on', b.dataset.view === this.view);
+    for (const b of this.root.querySelectorAll('[data-who]')) b.classList.toggle('on', b.dataset.who === prefs.evWho);
     for (const b of this.root.querySelectorAll('[data-group]')) b.classList.toggle('on', !prefs.evOff.includes(b.dataset.group));
     this.kinds.hidden = acc;
     const behind = s.behind > 3 ? s.behind : 0;

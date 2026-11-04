@@ -481,7 +481,8 @@ sup.inv { color: var(--accent); font-size: .8em; line-height: 0; margin-left: 1p
 .ctx button:hover { background: var(--accent); color: var(--ink, #111112); }
 
 /* ---------- race events ---------- */
-.ev-kinds { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 8px; }
+.ev-kinds { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 14px 8px; }
+.ev-who { margin-right: 6px; }
 .ev-kinds button {
   padding: 3px 9px; border: 1px solid var(--line); border-radius: 7px; background: none; cursor: pointer;
   color: var(--mute); font: 500 10px var(--mono); letter-spacing: .06em; text-transform: uppercase;
