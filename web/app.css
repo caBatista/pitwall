@@ -6,7 +6,7 @@
   --ink: #111112; --ink-soft: #2a2a2d; --off: #f4f2ec;
   --bg: var(--ink); --bg-2: #0b0b0c;
   --card: #1a1a1c; --card-2: var(--ink-soft);
-  --line: #2a2a2d; --line-2: #3a3a3e;
+  --line: #2a2a2d; --line-2: #3a3a3e; --sep: rgba(255, 255, 255, .055);
   --txt: var(--off); --dim: #8a8a8f; --mute: #5f5f64;
   --accent: #f4b400; --accent-deep: #e08a00;
   --purple: #b98cff; --green: #4fd38a; --amber: var(--accent); --red: #ff5a5a; --blue: #6aa8ff;
@@ -30,6 +30,15 @@ body.transparent { background: transparent; }
 button { font: inherit; color: inherit; }
 .mono, .t, .rt { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
+/* Cuts the GPU process from ~45% to ~6% of a core, with the same layers, paints and pixels: one box with
+   rounded corners and a border of mixed colours, anywhere in the page's layer, changes how Chromium
+   rasters that whole layer. Found by bisection, the reason inside Chromium is not confirmed.
+   It has to be painted: no display:none, no opacity:0. Check with tools/bench_cpu.py after a WebView2 update. */
+body::before {
+  content: ""; position: absolute; left: 0; bottom: 0; width: 3px; height: 3px; pointer-events: none;   /* fixed would get a layer of its own and do nothing */
+  border: 1px solid rgba(255, 255, 255, .01); border-top-color: rgba(255, 255, 255, .02); border-radius: 1px;
+}
+
 /* UI scale for a monitor at a distance: --zoom is set from main.js (?zoom=, +/- keys) */
 body { zoom: var(--zoom, 1.1); }
 .app { display: grid; grid-template-rows: auto 1fr; height: calc(100vh / var(--zoom, 1.1)); }
@@ -42,7 +51,7 @@ body { zoom: var(--zoom, 1.1); }
 }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand b { font: 900 26px/.82 var(--display); letter-spacing: -.015em; text-transform: uppercase; }
-.logo { width: 38px; height: 26px; display: block; }
+.logo { width: 26px; height: 26px; display: block; }
 .trk-name { font: 900 24px/.9 var(--display); letter-spacing: -.005em; text-transform: uppercase; }
 .trk-sub { color: var(--dim); font: 500 10.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; margin-top: 3px; }
 .series {   /* series name: iRacing gives only an id, names come from web/series.json */
@@ -205,6 +214,7 @@ svg.tyre.wet { color: var(--blue); }
 .rrow {
   display: grid; grid-template-columns: 34px 86px 22px minmax(90px, 1fr) 56px 84px 60px 58px; align-items: center; column-gap: 8px;
   height: 30px; padding: 0 8px 0 0; position: relative; overflow: hidden;
+  border-bottom: 1px solid var(--sep);
 }
 .rrow .fc { display: contents; }   /* the flag is the grid cell, inside a stable wrapper for patchRows */
 .rrow:hover { background: rgba(255, 255, 255, .035); }
@@ -224,13 +234,18 @@ svg.tyre.wet { color: var(--blue); }
 }
 .rcar { display: flex; margin-left: -14px; }  /* -(column-gap + 6px slant): the cuts meet with no gap */
 .rcar .rn {
-  display: grid; place-items: center; min-width: 46px; padding: 0 8px 0 14px;
-  background:
-    linear-gradient(102deg, transparent 0 10px, rgba(0, 0, 0, .45) 10px, transparent 18px),  /* the stripe casts a shadow into the wash */
-    linear-gradient(102deg, var(--cc) 0 10px, color-mix(in srgb, var(--cc) 40%, transparent) 10px, transparent),
-    var(--rn-under, none);   /* lapped row: an opaque base so the wash keeps its colour and fades into the red/blue */
+  position: relative; isolation: isolate; display: grid; place-items: center; min-width: 46px; padding: 0 8px 0 14px;
   font: 600 13px/1 var(--num); font-variant-numeric: tabular-nums; color: var(--txt);   /* same size as the name */
-  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+/* the block is a skewed box, not a clip-path or a slanted gradient: a hard stop in a slanted gradient has
+   no antialiasing and the stripe came out in stairs. A skewed box's edges are smooth, and the wash runs
+   straight across it, so it doesn't band either */
+.rcar .rn::before {
+  content: ""; position: absolute; inset: 0 3px; z-index: -1; transform: skewX(-12deg);
+  border-left: 4px solid var(--cc);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--cc) 42%, transparent), transparent),
+    var(--rn-under, none);   /* lapped row: an opaque base so the wash keeps its colour and fades into the red/blue */
 }
 .rcar .mk { flex: 1; display: grid; place-items: center; }
 .rrow .rt { text-align: right; font: 600 14px var(--num); font-variant-numeric: tabular-nums; }
@@ -291,7 +306,7 @@ svg.tyre.wet { color: var(--blue); }
 /* lapped / lapping (race): the colour starts right where the car number block does (28px = pos
    column 34 + gap 8 - 15 overlap) and runs behind the make logo, so the number's class wash fades
    into red/blue instead of into the row */
-.rrow.up, .rrow.down { --rn-under: linear-gradient(102deg, var(--card) 0 30%, transparent); }
+.rrow.up, .rrow.down { --rn-under: linear-gradient(90deg, var(--card) 30%, transparent); }
 .rrow.up { background: linear-gradient(90deg, transparent 28px, rgba(255, 90, 90, .32) 28px); }
 .rrow.down { background: linear-gradient(90deg, transparent 28px, rgba(106, 168, 255, .32) 28px); }
 .rrow.empty { opacity: .0; }

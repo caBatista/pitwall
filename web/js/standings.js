@@ -35,7 +35,9 @@ function visibleRows(rows, ref, drivers, room, from) {
   const max = Math.max(0, others.length - slots);
   const start = Math.min(from, max);
   const shown = new Set(others.slice(start, start + slots));
-  return { list: rows.filter((r, k) => pins.has(k) || shown.has(r)), start, max, slots, free: others.length };
+  const list = rows.filter((r, k) => pins.has(k) || shown.has(r));
+  // a class header with none of its drivers in view would just look like an empty class
+  return { list: list.filter((r, k) => r.i != null || r.key === 'none' || list[k + 1]?.i != null), start, max, slots, free: others.length };
 }
 
 /**

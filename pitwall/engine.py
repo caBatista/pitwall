@@ -17,10 +17,11 @@ from .trackmap import TrackMapper
 
 BINS = 360
 SESSION_STATE = {0: "Invalid", 1: "Get in car", 2: "Warm-up", 3: "Parade laps", 4: "Racing", 5: "Checkered", 6: "Cool down"}
-UNLIMITED_TIME = 86400.0
+UNLIMITED_TIME = 604000.0   # iRacing reports 604800 s (a week) and 32767 laps; a 24 h race is 86400 s and real
 UNLIMITED_LAPS = 32000
 # per-car flags from CarIdxSessionFlags, most serious first
 CAR_FLAGS = [(0x20000, "dq"), (0x10000, "black"), (0x100000, "repair"), (0x80000, "warn")]
+YELLOWS = 0x8 | 0x100 | 0x4000 | 0x8000   # yellow, yellow waving, caution, caution waving
 
 
 SOF_K = 1600 / math.log(2)
@@ -133,6 +134,22 @@ def flag_name(bits: int) -> str:
     return "none"
 
 
+def laps_to_flag(lead_done, lead_lap, my_done, my_lap, laps_total=None, time_rem=None):
+    """Laps I still drive, from here, until I see the chequered flag. The flag falls for the overall
+    leader: when they complete the last lap of a lap race, or the lap running when the clock hits zero
+    of a timed one. Then I finish the lap I am on, which may be one lap more than my own clock says.
+    lead_done, my_done: laps covered, with the fraction. Same reasoning as irdashies'
+    FuelProjectionProcessor."""
+    limits = []
+    if laps_total:
+        limits.append(max(0.0, laps_total - lead_done))
+    if time_rem is not None:
+        limits.append(math.ceil(lead_done % 1.0 + max(0.0, time_rem) / lead_lap - 1e-6) - lead_done % 1.0)
+    left = min(limits, default=0.0)   # both set: whichever comes first
+    mine = my_done % 1.0
+    return max(0.0, math.ceil(mine + left * lead_lap / my_lap - 1e-6) - mine)
+
+
 class PassLog:
     """Last time each car crossed each bin boundary (tab[b] = crossing of b/BINS)."""
 
@@ -214,7 +231,12 @@ class FuelTracker:
 
     @property
     def avg(self):
+        """Mean of the latest 8 clean laps. A lap far from their median (a spin, a stretch off the
+        racing line, a lift behind traffic) says nothing about the next one: Auto fuel uses this."""
         recent = list(self.hist)[-8:]
+        if len(recent) >= 3:
+            mid = sorted(recent)[len(recent) // 2]
+            recent = [x for x in recent if abs(x - mid) <= 0.2 * mid] or recent
         return sum(recent) / len(recent) if recent else None
 
     @property
@@ -232,6 +254,7 @@ class Engine:
         self.meta = {}
         self.player = 0
         self.tank = 0.0
+        self.kg_per_l = 0.75
         self.drivers_ver = 0
         self.log = PassLog()
         self.fuel = FuelTracker()
@@ -256,6 +279,7 @@ class Engine:
         self._on_pit, self._fuel_now = True, (None, None, None)   # (level, clean average, laps left)
         self._want, self._want_raw, self._want_t = None, None, 0.0   # tyre the weather asks for (held 5 s)
         self._mark, self._line, self._pend_lap, self._lap_t = {}, {}, {}, {}   # own lap timing (invalid laps)
+        self._lap_sync = {}    # car -> (laps, pct, correction, since when), see lap_fix
         self._inc_line = None   # my incident count when my last lap ended
         self.tyres = {}        # tyre compound index -> "dry" / "wet" (DriverInfo.DriverTires)
         self._grid = {}        # car -> starting position (overall) for positions gained in a race
@@ -306,6 +330,7 @@ class Engine:
         self.player = int(di.get("DriverCarIdx") or 0)
         mx = float(di.get("DriverCarFuelMaxLtr") or 0) * float(di.get("DriverCarMaxFuelPct") or 1)
         self.tank = mx
+        self.kg_per_l = float(di.get("DriverCarFuelKgPerLtr") or 0.75)
         est_default = float(di.get("DriverCarEstLapTime") or 100.0)
         self.tyres = {int(t.get("TireIndex", k)): ("wet" if "wet" in str(t.get("TireCompoundType", "")).lower() else "dry")
                       for k, t in enumerate(di.get("DriverTires") or [])}
@@ -375,6 +400,24 @@ class Engine:
             return None
         need = (target + reserve) * avg - level
         return max(0.0, min(need, self.tank - level) if self.tank else need)
+
+    def lap_fix(self, i, laps, pct, t):
+        """The lap counter and the lap distance don't flip on the same frame at the line. Added up, the
+        car would jump a whole lap back or forward for a moment: order and gaps blink. Crew Chief
+        corrects the same mismatch. Returns -1, 0 or +1 to add to the laps; never for more than 2 s, so
+        a tow or a reset isn't taken for a line crossing."""
+        prev = self._lap_sync.get(i)
+        fix, since = 0, t
+        if prev:
+            lc0, p0, fix0, t0 = prev
+            if laps == lc0 and p0 - pct > 0.5:      # distance wrapped: ahead of the counter, or caught up with it
+                fix = 1 if fix0 >= 0 else 0
+            elif laps == lc0 + 1 and pct > 0.5:     # counter first, distance still before the line
+                fix = -1
+            elif laps == lc0 and fix0 and t - t0 < 2 and (pct < 0.5) == (fix0 > 0):   # still waiting
+                fix, since = fix0, t0
+        self._lap_sync[i] = (laps, pct, fix, since)
+        return fix
 
     def update(self, raw):
         t = float(raw.get("SessionTime") or 0.0)
@@ -461,6 +504,7 @@ class Engine:
             self._wx_t = -1e9
             self._in_pit, self._out, self._pits, self._race_gaps = set(), {}, {}, {}
             self._flag_lap = None
+            self._lap_sync = {}
             self._laps, self._seen_last, self._race_laps = {}, None, None
             self._want, self._want_raw = None, None
             self._mylaps, self._my_last, self._fuel_at_line, self._my_lapc = deque(maxlen=60), raw.get("LapLastLapTime"), None, None
@@ -511,7 +555,10 @@ class Engine:
             elif idx in self._out and lapc[idx] != self._out[idx]:
                 del self._out[idx]
 
-        tot = {i: (lapc[i] if lapc[i] is not None and lapc[i] > -2 else 0) + max(0.0, pct[i]) for i in present}
+        tot = {}
+        for i in present:
+            laps = lapc[i] if lapc[i] is not None and lapc[i] > -2 else 0
+            tot[i] = laps + max(0.0, pct[i]) + self.lap_fix(i, laps, pct[i], t)
 
         # ordering. Race, while racing: live order by distance covered (laps + lap fraction), the
         # way overlays do it - CarIdxPosition only changes when a car crosses the line. Cars not
@@ -746,26 +793,42 @@ class Engine:
         else:
             rel = []
 
+        def pace(i):
+            """A car's recent lap time: its latest valid laps, else its best, else its class estimate."""
+            h = [x[0] for x in self._laps.get(i, ()) if not x[1]]
+            return (sum(h) / len(h)) if h else (best[i] if best[i] > 0 else lap_of(i))
+
         # fuel
         fuel_l = raw.get("FuelLevel")
         lap_t = self.fuel.avg_time or (best[me] if best[me] > 0 else None) or ref
-        self.fuel.update(lapc[me], fuel_l, raw.get("LapLastLapTime"), bool(raw.get("OnPitRoad")), flag,
-                         bool(raw.get("IsOnTrack")))
+        # (not flag: a black flag or the white one must not hide a caution)
+        self.fuel.update(lapc[me], fuel_l, raw.get("LapLastLapTime"), bool(raw.get("OnPitRoad")),
+                         "yellow" if int(raw.get("SessionFlags") or 0) & YELLOWS else flag, bool(raw.get("IsOnTrack")))
         avg = self.fuel.avg
         provisional = False
         if avg is None and (raw.get("FuelUsePerHour") or 0) > 1 and lap_t:
-            avg, provisional = raw["FuelUsePerHour"] * lap_t / 3600.0, True
+            avg, provisional = raw["FuelUsePerHour"] / self.kg_per_l * lap_t / 3600.0, True   # it comes in kg/h
         laps_total = raw.get("SessionLapsTotal") or 0
         laps_rem = raw.get("SessionLapsRemainEx") or 0
         time_total = raw.get("SessionTimeTotal") or 0
         time_rem = raw.get("SessionTimeRemain") or 0
         mypct = max(0.0, pct[me]) if me < len(pct) else 0.0
         mode, laps_left = "none", None
-        if laps_total and laps_total < UNLIMITED_LAPS and laps_rem < UNLIMITED_LAPS:
-            mode, laps_left = "laps", max(0.0, laps_rem - mypct)
-        elif time_total and time_total < UNLIMITED_TIME and time_rem < UNLIMITED_TIME and lap_t:
-            mode = "time"
-            laps_left = max(0.0, math.ceil(mypct + max(0.0, time_rem) / lap_t) - mypct)
+        lap_limit = laps_total if laps_total and laps_total < UNLIMITED_LAPS and laps_rem < UNLIMITED_LAPS else None
+        time_limit = time_rem if time_total and time_total < UNLIMITED_TIME and time_rem < UNLIMITED_TIME and lap_t else None
+        if lap_limit is not None or time_limit is not None:
+            mode = "laps" if lap_limit is not None else "time"
+            if is_race and order and me in tot:
+                # by the leader, whose pace is what counts; under a caution the recent laps are the slow ones
+                lead = order[0]
+                lead_lap = lap_t if lead == me else pace(lead)
+                laps_left = 0.0 if finished else None
+                laps_left = laps_to_flag(tot[lead], lead_lap, tot[me], pace(me) if lead != me else lap_t,
+                                         lap_limit, time_limit) if laps_left is None else math.ceil(mypct - 1e-6) - mypct
+            elif lap_limit is not None:
+                laps_left = max(0.0, laps_rem - mypct)
+            else:
+                laps_left = max(0.0, math.ceil(mypct + max(0.0, time_rem) / lap_t) - mypct)
         fuel = {
             "level": round(fuel_l, 3) if fuel_l is not None else None,
             "tank": round(self.tank, 1),
@@ -777,7 +840,7 @@ class Engine:
             "mode": mode,
             "lapsLeft": round(laps_left, 2) if laps_left is not None else None,
             "lapTime": round(lap_t, 3) if lap_t else None,
-            "lap": raw.get("Lap"),
+            "lap": raw.get("Lap"), "pct": round(mypct, 4),
         }
 
         # pit: what is on the car and what is set for the next stop. iRacing has no forecast, so a
@@ -846,8 +909,7 @@ class Engine:
                 n = math.ceil(laps_total - d - 1e-6)
                 self._race_laps = (n, n != laps_total)
             elif time_total and time_total < UNLIMITED_TIME and time_rem < UNLIMITED_TIME:
-                lh = [x[0] for x in self._laps.get(lead, ()) if not x[1]]
-                lt = (sum(lh) / len(lh)) if lh else (best[lead] if best[lead] > 0 else lap_of(lead))
+                lt = pace(lead)
                 n = math.ceil(tot[lead] + max(0.0, time_rem) / lt - 1e-6) if lt else None
                 self._race_laps = (math.ceil(n - d - 1e-6), True) if n else None
         race_laps = self._race_laps

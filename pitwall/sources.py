@@ -137,6 +137,9 @@ _CLASSES = [
     (4002, "GT3", "Porsche 992 GT3 R", 0xFFCD3C, 1.000, 14, 110.0, 3.1),
     (4003, "GT4", "BMW M4 GT4", 0x3CC8FF, 0.905, 7, 100.0, 2.7),
 ]
+# looks only: make logos and country flags on the board
+_MOCK_CARS = ["porsche992rgt3", "ferrari296gt3", "bmwm4gt3", "mclaren720sgt3", "mercedesamggt3", "audir8lmsevo2gt3", "lamborghinievogt3", "fordmustanggt3", "amvantagegt3", "chevyvettez06rgt3"]
+_MOCK_FLAIRS = ["Brazil", "Germany", "Italy", "Spain", "United States", "France", "Portugal", "Japan", "United Kingdom", "Netherlands", "Australia"]
 _CLASSES_WIDE = [   # --mock-wide: a bigger field, six classes
     (4004, "GTP", "Porsche 963", 0xFF5A5A, 1.170, 6, 88.0, 2.9),
     *_CLASSES,
@@ -300,6 +303,7 @@ class MockSource:
                 "CarClassColor": c["cls"][3], "CarClassEstLapTime": 100.0 / c["cls"][4],
                 "IRating": c["ir"], "LicString": c["lic"],
                 "LicColor": "0xfc8a27" if c["lic"][0] == "B" else ("0x0153db" if c["lic"][0] == "A" else "0xfeec04"),
+                "CarPath": _MOCK_CARS[c["idx"] % len(_MOCK_CARS)], "FlairName": _MOCK_FLAIRS[c["idx"] % len(_MOCK_FLAIRS)],
                 "IsSpectator": 0, "CarIsPaceCar": 0, "CarIsAI": 0,
             })
         drivers.append({"CarIdx": 63, "UserName": "Pace Car", "CarIsPaceCar": 1, "CarClassID": 0})

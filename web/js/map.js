@@ -15,7 +15,7 @@ export const trackmap = {
     this.cv = root.querySelector('#mp-cv');
     this.note = root.querySelector('#mp-note');
     this.ctx = this.cv.getContext('2d');
-    this.logo = new Image(); this.logo.src = '/img/cb-sprint-amber.svg';   // my car on the map
+    this.logo = new Image(); this.logo.src = '/img/logo.svg';   // my car on the map
     this.fit = null;
     this.fitVer = -1;
     this.noteKey = '';
@@ -105,7 +105,7 @@ export const trackmap = {
     if (mc && mc.pct >= 0) {
       const ring = multi ? S.classMap.get(S.drivers[me]?.cls)?.color || '#f4b400' : '#f4b400';
       const r = u * 1.35, [x, y] = disc(mc, r, '#111112', null, ring);
-      if (this.logo.complete) ctx.drawImage(this.logo, x - r * 0.75, y - r * 0.52, r * 1.5, r * 1.03);
+      if (this.logo.complete) ctx.drawImage(this.logo, x - r * 0.8, y - r * 0.8, r * 1.6, r * 1.6);
     }
   },
 

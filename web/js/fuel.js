@@ -1,4 +1,5 @@
 import { prefs, savePrefs, fmt } from './util.js';
+import { pitPlan } from './calc.js';
 
 /** Scroll wheel of values, like a phone's date picker: 0.0 to 5.0 by tenths, with the mouse wheel,
  *  by dragging or touch, by tapping a value or with the arrow keys. */
@@ -48,26 +49,6 @@ function picker(el, value, change) {
   };
   el.addEventListener('pointerup', drop);
   el.addEventListener('pointercancel', drop);
-}
-
-/** How to reach the flag with reserve laps of fuel left. Enough already: {stops: 0, toGo, spare}.
- *  Otherwise how many stops and the laps of the next one: last is the last lap the fuel in the tank
- *  completes, first the earliest from which full tanks at every stop still get there, never before the
- *  next lap. add: what goes in if that stop is made on first. */
-export function pitPlan(level, avg, laps, reserve, tank, lap) {
-  if (!avg || level == null || laps == null) return null;
-  const toGo = laps * avg, spare = level - toGo;
-  if (spare >= reserve * avg) return { stops: 0, toGo, spare };
-  const missing = toGo + reserve * avg - level;
-  const reach = Math.max(0, Math.floor(level / avg));
-  let stops = tank ? Math.max(1, Math.ceil(missing / tank)) : 1, wait = 0;
-  for (; tank; stops++) {   // stopping too early would need one stop more
-    wait = Math.max(0, Math.ceil(laps + reserve - stops * tank / avg));
-    if (wait <= reach) break;
-  }
-  wait = Math.max(wait, Math.min(1, reach));
-  const add = tank ? Math.min(missing, tank - (level - wait * avg)) : missing;
-  return { stops, add, first: lap + wait, last: lap + reach };
 }
 
 /**
@@ -160,7 +141,7 @@ export const fuel = {
 
     if (!race) return;
     // TO FINISH
-    const plan = pitPlan(lvl, avg, auto ? f.lapsLeft : prefs.targetLaps, prefs.reserve, tank, f.lap ?? 0);
+    const plan = pitPlan(lvl, avg, auto ? f.lapsLeft : prefs.targetLaps, prefs.reserve, tank, f.lap ?? 0, f.pct ?? 0);
     const liters = (x) => fmt.vol(x).toFixed(2);
     const L1 = (x) => `${fmt.vol(x).toFixed(1)} ${fmt.volU()}`;
     let key = 'Waiting for', main = 'A clean lap', val = '', sub = '';
