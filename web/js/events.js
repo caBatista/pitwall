@@ -3,9 +3,10 @@ import { esc, lapTime, prefs, savePrefs } from './util.js';
 /**
  * Race Events: for when the driver is out of the car. Two views:
  * Events: the session of the reference driver, whoever that is at the moment.
- * Accidents: the ones that count, loss of control and contact (2x, 4x), and the cautions. Mine are exact;
- * anybody else's are estimates, marked with ~, unless the session tells the points (see events.py).
- * A click on a row takes the sim's replay there, some seconds before, with the camera on the car.
+ * Accidents: the ones that count, loss of control and contact (2x, 4x), and the cautions. The points are
+ * iRacing's; a ~ marks an estimate, for when it hasn't published them yet (see events.py).
+ * Every session of the event is in the same list, a break between one and the next.
+ * A click on a row takes the sim's replay there, some seconds before, chase camera on the car.
  * Newest at the bottom, under a heading per lap. Nothing runs while the card is hidden.
  */
 const GROUPS = { pass: 'Battles', inc: 'Incidents', pit: 'Pits', lap: 'Laps', flag: 'Flags' };
@@ -13,7 +14,7 @@ const GROUP_OF = {
   pass: 'pass', fight: 'pass', inc: 'inc', acc: 'inc', off: 'inc', stop: 'inc', out: 'inc', pit: 'pit', fast: 'lap', pb: 'lap', q: 'lap', inv: 'lap',
   pen: 'flag', finish: 'flag',
 };
-const TABS = { practice: 'Practice', qualify: 'Qualify', race: 'Race', test: 'Test' };
+const SESSIONS = { practice: 'Practice', qualify: 'Qualify', race: 'Race', test: 'Test' };
 const TAG = {
   pass: 'Pass', fight: 'Fight', inc: 'Inc', acc: 'Acc', off: 'Off', stop: 'Stop', out: 'Out', pit: 'Pit', fast: 'Fast', pb: 'PB', q: 'Lap', inv: 'Inv', pen: 'Flag', finish: 'Finish',
   caution: 'Caution', clear: 'Clear', red: 'Red',
@@ -31,7 +32,10 @@ function line(S, e, ref) {
     case 'pass': return `${who(e.i)} passes ${who(e.j)}${e.p === 1 ? ' for the lead' : e.p ? ` for P${e.p}` : ''}`;
     case 'fight': return e.j === ref ? `${who(e.j)} defends from ${who(e.i)} <i>${e.d}s</i>` : `${who(e.i)} attacks ${who(e.j)} <i>${e.d}s</i>`;
     case 'inc': return `${who(e.i)} ${e.n >= 4 ? 'car contact' : e.n >= 2 ? 'lost control or contact' : 'off track'}${e.n >= 2 && e.j != null ? ` with ${who(e.j)}` : ''} <i>${e.n}x</i>`;
-    case 'acc': return `${who(e.i)} ${e.j != null ? `contact with ${who(e.j)}` : 'lost control'} <i>${e.est ? '~' : ''}${e.x}x</i>`;
+    case 'acc': {
+      const what = e.est ? (e.j != null ? 'contact' : 'lost control') : e.x >= 4 ? 'car contact' : 'lost control or contact';
+      return `${who(e.i)} ${what}${e.j != null ? ` with ${who(e.j)}` : ''} <i>${e.est ? '~' : ''}${e.x}x</i>`;
+    }
     case 'off': return `${who(e.i)} off track`;
     case 'stop': return `${who(e.i)} stopped on track`;
     case 'out': return `${who(e.i)} left the track`;
@@ -55,18 +59,16 @@ const tone = (e, car) => (e.k === 'pass' ? (e.i === car ? 'gain' : 'loss') : e.k
 export const events = {
   id: 'w-events',
   mount(root, S) {
-    this.root = root; this.S = S; this.drawn = ''; this.tab = null; this.view = 'events'; this.solo = !!new URLSearchParams(location.search).get('w');
+    this.root = root; this.S = S; this.drawn = ''; this.view = 'events'; this.solo = !!new URLSearchParams(location.search).get('w');
     prefs.evOff ??= [];   // groups switched off
     root.innerHTML = `
       <div class="card-h"><div class="ttl">Race events</div><div class="ctl">
-        <div class="ev-tabs seg" hidden></div>
         <div class="seg ev-view"><button data-view="events">Events</button><button data-view="accidents">Accidents</button></div>
       </div></div>
       <div class="ev-kinds">${Object.entries(GROUPS).map(([k, n]) => `<button data-group="${k}">${n}</button>`).join('')}</div>
       <div class="ev-body"></div>
       <div class="ev-live" hidden><span>Replay <b></b> behind live</span><button class="ghost-btn" data-live>Back to live</button></div>`;
     this.body = root.querySelector('.ev-body');
-    this.tabs = root.querySelector('.ev-tabs');
     this.live = root.querySelector('.ev-live');
     this.kinds = root.querySelector('.ev-kinds');
     root.addEventListener('click', (e) => {
@@ -81,8 +83,7 @@ export const events = {
         return;
       }
       if ('live' in d) { this.on = null; S.send({ cmd: 'replay_live' }); return; }
-      if (d.tab) this.tab = Number(d.tab);
-      else if (d.view) this.view = d.view;
+      if (d.view) this.view = d.view;
       else if (d.group) { prefs.evOff = prefs.evOff.includes(d.group) ? prefs.evOff.filter((g) => g !== d.group) : [...prefs.evOff, d.group]; savePrefs(); } else return;
       this.update(S);
     });
@@ -92,13 +93,19 @@ export const events = {
     const pick = this.view === 'accidents'
       ? isAccident
       : (e) => (e.i === ref || e.j === ref) && !prefs.evOff.includes(GROUP_OF[e.k]);
-    return S.events.filter((e) => e.sn === this.shown && pick(e)).sort((a, b) => a.t - b.t || a.id - b.id).slice(-MAX_ROWS);
+    return S.events.filter(pick).sort((a, b) => a.sn - b.sn || a.t - b.t || a.id - b.id).slice(-MAX_ROWS);
   },
 
   rows(S, ref) {
-    let html = '', lap = null;
+    let html = '', lap = null, sn = null;
     const acc = this.view === 'accidents';
-    for (const e of this.list(S, ref)) {
+    const list = this.list(S, ref);
+    const several = new Set(list.map((e) => e.sn)).size > 1;
+    for (const e of list) {
+      if (e.sn !== sn) {
+        sn = e.sn; lap = null;
+        if (several) html += `<div class="ev-sess">${SESSIONS[e.sk] || esc(e.sk ?? '')}</div>`;
+      }
       const mine = e.i === ref ? e.cl : e.j === ref ? e.cj : null;   // the lap of the reference driver, not mine
       if (!acc && mine > (lap ?? 0)) { lap = mine; html += `<div class="ev-lap">Lap ${lap}</div>`; }
       const color = S.classMap.get(S.drivers[e.i]?.cls)?.color;
@@ -111,18 +118,6 @@ export const events = {
   update(S) {
     if (!S.st?.session || (!this.solo && !document.body.hasAttribute('data-out'))) return;
     const s = S.st.session, ref = S.st.me?.i;
-    const sessions = new Map(S.events.map((e) => [e.sn, e.sk]));
-    sessions.set(s.num, s.kind);
-    if (this.current !== s.num) { this.current = s.num; this.tab = null; }   // a new session: follow it
-    this.shown = this.tab ?? s.num;
-
-    const tabs = sessions.size > 1 ? [...sessions].sort((a, b) => a[0] - b[0]) : [];
-    const tabKey = tabs.join() + this.shown;
-    if (tabKey !== this.tabKey) {
-      this.tabKey = tabKey;
-      this.tabs.hidden = !tabs.length;
-      this.tabs.innerHTML = tabs.map(([n, k]) => `<button data-tab="${n}" class="${n === this.shown ? 'on' : ''}">${TABS[k] || k}</button>`).join('');
-    }
     const acc = this.view === 'accidents';
     for (const b of this.root.querySelectorAll('[data-view]')) b.classList.toggle('on', b.dataset.view === this.view);
     for (const b of this.root.querySelectorAll('[data-group]')) b.classList.toggle('on', !prefs.evOff.includes(b.dataset.group));
@@ -131,7 +126,7 @@ export const events = {
     this.live.hidden = !behind;
     if (behind) this.live.querySelector('b').textContent = clock(behind);
 
-    const key = [S.eventsVer, this.shown, this.view, prefs.evOff, ref].join('|');
+    const key = [S.eventsVer, this.view, prefs.evOff, ref].join('|');
     if (key === this.drawn) return;
     this.drawn = key;
     const atEnd = this.body.scrollHeight - this.body.scrollTop - this.body.clientHeight < 30;

@@ -99,13 +99,29 @@ class IRacingSource:
             self.ir.cam_switch_num(num, self.ir["CamGroupNumber"] or 1, self.ir["CamCameraNumber"] or 0)
 
     def replay(self, session, ms, num):
-        """Show a moment of the replay, playing, on this car (None: the car on camera stays)."""
+        """Show a moment of the replay, playing, from the chase camera, on this car (None: the car on
+        camera stays). Out of the car iRacing leaves it on Scenic, where an incident can't be seen."""
         if self.ir.is_connected:
-            if num:
-                self.ir.cam_switch_num(num, self.ir["CamGroupNumber"] or 1, self.ir["CamCameraNumber"] or 0)
+            group, camera = self._chase()
+            self.ir.cam_switch_num(num or self._car_on_camera(), group, camera)
             # the speed goes first: sent right after a search, it cancels the search (seen in iRacing)
             self.ir.replay_set_play_speed(1)
             self.ir.replay_search_session_time(session, ms)
+
+    def _chase(self):
+        """(group, camera) of the Chase camera; without one, the camera in use."""
+        groups = (self.ir["CameraInfo"] or {}).get("Groups") or []
+        for g in groups:
+            if g.get("GroupName") == "Chase":
+                return g["GroupNum"], 1
+        return self.ir["CamGroupNumber"] or 1, self.ir["CamCameraNumber"] or 0
+
+    def _car_on_camera(self):
+        idx = self.ir["CamCarIdx"]
+        for d in (self.ir["DriverInfo"] or {}).get("Drivers") or []:
+            if d.get("CarIdx") == idx:
+                return d.get("CarNumber")
+        return None
 
     def replay_live(self):
         import irsdk  # noqa: WPS433

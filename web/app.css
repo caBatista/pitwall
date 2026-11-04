@@ -111,13 +111,22 @@ body[data-kind="qualify"] .board:not(.solo), body[data-kind="test"] .board:not(.
   grid-template-areas: "standings map" "standings map" "standings bottom";
 }
 /* race over: the standings as the results (see .srow.over), next to the track map */
-body[data-over] .board > :not(#w-standings, #w-map, #w-events) { display: none; }
+body[data-over] .board > :not(#w-standings, #w-map, #w-events, .col-bottom) { display: none; }
+body[data-over]:not([data-out]) .board > .col-bottom { display: none; }
 body[data-over] .board:not(.solo) { grid-template-columns: minmax(620px, 1fr) 1fr; grid-template-rows: 1fr; grid-template-areas: "standings map"; }
 /* out of the car: the standings, Race Events over the map at its usual size */
 #w-events { display: none; grid-area: events; }
 .board.solo #w-events { display: flex; grid-area: auto; }
 body[data-out] .board:not(.solo) #w-events { display: flex; }
-body[data-out] .board:not(.solo) #w-relative, body[data-out] .board:not(.solo) > .col-bottom { display: none; }
+body[data-out] .board:not(.solo) #w-relative, body[data-out]:not([data-slot]) .board:not(.solo) > .col-bottom { display: none; }
+/* fuel or weather in the map's place; the map stays laid out, so it keeps its size */
+body[data-out][data-slot] .board:not(.solo) > .col-bottom { grid-area: map; grid-template-columns: 1fr; display: grid; }
+body[data-out][data-slot] .board:not(.solo) #w-map { visibility: hidden; }
+body[data-out][data-slot="fuel"] .board:not(.solo) #w-weather, body[data-out][data-slot="weather"] .board:not(.solo) #w-fuel { display: none; }
+.slot-nav { display: none; position: absolute; top: 9px; left: 50%; transform: translateX(-50%); z-index: 3; gap: 4px; }
+body[data-out] .board:not(.solo) .card:hover > .slot-nav { display: flex; }
+.slot-nav button { width: 30px; height: 24px; padding: 0; border: 1px solid var(--line-2); border-radius: 6px; background: var(--bg-2); color: var(--accent); font: 700 17px/1 var(--mono); cursor: pointer; }
+.slot-nav button:hover { border-color: var(--accent); }
 body[data-out][data-kind] .board:not(.solo) { grid-template-rows: minmax(0, 1fr) 340px; grid-template-areas: "standings events" "standings map"; }
 .board.solo { grid-template-columns: 1fr; grid-template-rows: 1fr; grid-template-areas: none; }
 .board.solo > * { grid-area: auto !important; }
@@ -479,6 +488,8 @@ sup.inv { color: var(--accent); font-size: .8em; line-height: 0; margin-left: 1p
 }
 .ev-kinds button.on { color: var(--txt); border-color: var(--line-2); background: var(--bg-2); }
 .ev-body { flex: 1; min-height: 0; overflow-y: auto; margin: 0 8px 10px; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+.ev-sess { margin: 12px 6px 2px; padding-top: 9px; border-top: 1px solid var(--line-2); color: var(--txt); font: 900 15px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; }
+.ev-sess:first-child { margin-top: 2px; padding-top: 2px; border-top: 0; }
 .ev-lap { padding: 9px 6px 3px; color: var(--accent); font: 900 13px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; }
 .ev {
   display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; width: 100%; height: 28px; padding: 0 8px 0 0;

@@ -62,6 +62,11 @@ class App:
         self._wx_sent = 0.0
         self._connected = False
         self.auto_fuel = None   # (reserve, laps) with Auto fuel on, from the fuel card
+        # the event list survives a restart of the app; the simulator starts over each time
+        self._ev_path = None if source.name == "simulator" else engine.mapper.dir / "events.json"
+        self._ev_saved, self._ev_save_t = engine.ev.ver, 0.0
+        if self._ev_path:
+            engine.ev.load(self._ev_path)
 
     # ---- websocket ---------------------------------------------------------
     async def ws(self, request):
@@ -205,6 +210,12 @@ class App:
             out.append(dumps({"type": "events", "all": ev.items}))
         elif ev.new:
             out.append(dumps({"type": "events", "add": ev.drain()}))
+        if self._ev_path and ev.ver != self._ev_saved and time.time() - self._ev_save_t > 10:
+            self._ev_saved, self._ev_save_t = ev.ver, time.time()
+            try:
+                ev.save(self._ev_path)
+            except OSError as e:
+                print(f"[events] not saved: {e}", flush=True)
         out.append(dumps_clean(state))
         for text in out:
             await self.broadcast(text)

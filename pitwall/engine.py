@@ -261,7 +261,6 @@ class Engine:
         self.log = PassLog()
         self.fuel = FuelTracker()
         self.ev = EventLog()
-        self.inc_counts = {}   # car -> incident points, for those the session tells (admins, as far as known)
         self.in_car = False
         self.wx_hist = deque(maxlen=720)  # 5 s samples = 1 hour
         self._wx_t = -1e9
@@ -334,7 +333,6 @@ class Engine:
                     if r.get("CarIdx") is not None and fast > 0:
                         self._qtimes[int(r["CarIdx"])] = (fast, lst if lst > 0 else None)
         self.player = int(di.get("DriverCarIdx") or 0)
-        self.inc_counts = {int(d["CarIdx"]): int(d.get("CurDriverIncidentCount") or 0) for d in di.get("Drivers") or [] if d.get("CarIdx") is not None}
         mx = float(di.get("DriverCarFuelMaxLtr") or 0) * float(di.get("DriverCarMaxFuelPct") or 1)
         self.tank = mx
         self.kg_per_l = float(di.get("DriverCarFuelKgPerLtr") or 0.75)
@@ -933,11 +931,13 @@ class Engine:
         replaying = bool(raw.get("IsReplayPlaying"))
         ev_t = (raw.get("ReplaySessionTime") or t) if replaying else t
         ev_num = raw.get("ReplaySessionNum") if replaying and (raw.get("ReplaySessionNum") or 0) >= 0 else snum
+        watched = self.sessions.get(ev_num) if ev_num != snum else None   # a replay of another session
+        ev_kind = session_kind((watched.get("SessionType") or "").strip()) if watched else kind
         ev_frame = SimpleNamespace(
-            t=ev_t, sub=self.meta.get("subId"), snum=ev_num, kind=kind, state=state, flags=int(raw.get("SessionFlags") or 0),
+            t=ev_t, sub=self.meta.get("subId"), snum=ev_num, kind=ev_kind, state=state, flags=int(raw.get("SessionFlags") or 0),
             me=me, present=present, cls={i: self.drivers[i]["cls"] for i in present}, tot=tot, pct=pct, surf=surf, pitr=pitr,
             best=best, cflags=cflags, car_flag=car_flag, cpos=cpos, fin=set(self._fin), laps=self._laps, inc=inc, 
-            counts=self.inc_counts, counts_known=any(self.inc_counts.values()),
+            counts={i: int(r.get("Incidents") or 0) for i, r in res.items() if i is not None}, counts_known=bool(res),
             laps_done=lambda i: (lapc[i] if lapc[i] is not None else -1), length=(self.meta.get("lengthKm") or 5.0) * 1000,
         )
         try:

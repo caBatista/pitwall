@@ -1,6 +1,8 @@
 """Race Events: o que vira evento, o que nao vira e o momento certo no replay."""
 from conftest import frame, session
-from pitwall.events import REPLAY_LEAD
+from types import SimpleNamespace
+
+from pitwall.events import REPLAY_LEAD, EventLog
 
 
 def setup(engine, drivers=(0, 1, 2), kind="Race", **extra):
@@ -278,15 +280,15 @@ def test_the_speed_never_comes_after_the_search():
         is_connected = True
 
         def __getitem__(self, k):
-            return 1
+            return {"Groups": [{"GroupNum": 10, "GroupName": "Scenic"}, {"GroupNum": 20, "GroupName": "Chase"}]} if k == "CameraInfo" else 1
 
         def __getattr__(self, name):
-            return lambda *a: calls.append(name)
+            return lambda *a: calls.append((name, *a) if name == "cam_switch_num" else name)
 
     src = IRacingSource.__new__(IRacingSource)
     src.ir = Ir()
     src.replay(0, 1000, "64")
-    assert calls == ["cam_switch_num", "replay_set_play_speed", "replay_search_session_time"]
+    assert calls == [("cam_switch_num", "64", 20, 1), "replay_set_play_speed", "replay_search_session_time"]   # sempre chase
     calls.clear()
     src.replay_live()
     assert calls == ["replay_set_play_speed", "replay_search"]
@@ -333,17 +335,47 @@ def test_my_own_points_are_exact(engine):
     assert not kinds(engine, "acc")
 
 
-def test_points_of_the_others_are_used_when_the_session_gives_them(engine):
-    ds = [{"CarIdx": 0}, {"CarIdx": 1, "CurDriverIncidentCount": 1}]
-    engine.set_session(session(ds))
+def results(**points):
+    return [{"CarIdx": int(k[1:]), "Incidents": v} for k, v in points.items()]
+
+
+def test_points_of_the_others_come_from_the_results(engine):
+    engine.set_session(session(results=results(c0=0, c1=1)))
     run(engine, 0, 3, lambda t: racing({0: (5, .5), 1: (5, .2)}, t))
-    engine.set_session(session([{"CarIdx": 0}, {"CarIdx": 1, "CurDriverIncidentCount": 2}]))
+    engine.set_session(session(results=results(c0=0, c1=2)))
     run(engine, 3, 5, lambda t: racing({0: (5, .5), 1: (5, .2)}, t))
     assert not kinds(engine, "acc")   # +1x: fica de fora
-    engine.set_session(session([{"CarIdx": 0}, {"CarIdx": 1, "CurDriverIncidentCount": 6}]))
+    engine.set_session(session(results=results(c0=0, c1=6)))
     run(engine, 5, 7, lambda t: racing({0: (5, .5), 1: (5, .2)}, t))
     e = kinds(engine, "acc")
     assert [(x["i"], x["x"], x["est"]) for x in e] == [(1, 4, False)]
+
+
+def test_what_was_there_before_opening_is_not_news(engine):
+    engine.set_session(session(results=results(c0=0, c1=9)))
+    run(engine, 0, 3, lambda t: racing({0: (5, .5), 1: (5, .2)}, t))
+    assert not kinds(engine, "acc")
+
+
+def test_the_slowdown_says_when_it_happened(engine):
+    engine.set_session(session(results=results(c0=0, c1=0, c2=0)))
+    run(engine, 0, 1, lambda t: racing({1: (5, .30)}, t, SessionState=3))
+    pace_lap(engine, 2)
+    pace_lap(engine, 90, slow_from=120)
+    assert not kinds(engine, "acc")   # com resultados, a lentidao sozinha nao vira evento
+    engine.set_session(session(results=results(c0=0, c1=4, c2=0)))
+    engine.update(racing({1: (9, .1)}, 171))
+    e = kinds(engine, "acc")
+    assert [(x["x"], x["est"]) for x in e] == [(4, False)] and 119 <= e[0]["t"] <= 122   # o momento, nao a chegada
+
+
+def test_no_results_yet_it_is_an_estimate(engine):
+    """-1 em CurDriverIncidentCount, como vem dos outros em sessao oficial, nao quer dizer nada."""
+    engine.set_session(session([{"CarIdx": 0}, {"CarIdx": 1, "CurDriverIncidentCount": -1}, {"CarIdx": 2, "CurDriverIncidentCount": -1}]))
+    run(engine, 0, 1, lambda t: racing({1: (5, .30)}, t, SessionState=3))
+    pace_lap(engine, 2)
+    pace_lap(engine, 90, slow_from=120)
+    assert kinds(engine, "acc")[0]["est"] is True
 
 
 def test_each_car_keeps_its_own_lap(engine):
@@ -354,3 +386,28 @@ def test_each_car_keeps_its_own_lap(engine):
     setup(engine)
     run(engine, 21, 25, lambda t: racing({0: (9, .5), 1: (3, .2 + (.1 if t >= 23 else 0))}, t, PlayerCarMyIncidentCount=0 if t < 23 else 4))
     assert kinds(engine, "inc")[0]["cl"] == 10
+
+
+def test_the_list_survives_a_restart(engine, tmp_path):
+    setup(engine)
+    run(engine, 100, 103, lambda t: racing({0: (5, .50), 1: (5, .49)}, t))
+    run(engine, 103, 110, lambda t: racing({0: (5, .50), 1: (5, .49 if t < 104 else .51)}, t))
+    assert kinds(engine, "pass")
+    path = tmp_path / "events.json"
+    engine.ev.save(path)
+
+    other = EventLog()
+    other.load(path)
+    sub = engine.ev.sub
+    other.feed(SimpleNamespace(**{**vars(engine.ev._f), "sub": sub}))
+    assert [e["id"] for e in other.items] == [e["id"] for e in engine.ev.items] and other.cleared
+    e = kinds(engine, "pass")[0]
+    other.snum = e["sn"]
+    assert other.add(e["t"], "pass", i=e["i"], j=e.get("j")) is None   # visto de novo no replay: nao duplica
+    assert other.add(e["t"] + 60, "pass", i=e["i"], j=e.get("j"))["id"] == max(x["id"] for x in engine.ev.items) + 1
+    assert other.replay_target(other.items[0]["id"])
+
+    third = EventLog()
+    third.load(path)
+    third.feed(SimpleNamespace(**{**vars(engine.ev._f), "sub": "outra"}))
+    assert not third.items

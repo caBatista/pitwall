@@ -48,6 +48,28 @@ if (params.get('w')) {
 }
 for (const [w, el] of widgets) w.mount(el, S);
 
+// out of the car the map's place takes turns with Fuel and Weather: arrows on hover (see app.css)
+const SLOTS = ['map', 'fuel', 'weather'];
+function showSlot(k) {
+  if (k === 'map') delete document.body.dataset.slot; else document.body.dataset.slot = k;
+}
+if (!params.get('w')) {
+  showSlot(SLOTS.includes(prefs.outSlot) ? prefs.outSlot : 'map');
+  for (const k of SLOTS) {
+    ALL[k].root ??= document.getElementById(ALL[k].id);
+    document.getElementById(ALL[k].id).insertAdjacentHTML('beforeend',
+      '<div class="slot-nav"><button data-step="-1" title="Previous">\u2039</button><button data-step="1" title="Next">\u203A</button></div>');
+  }
+  board.addEventListener('click', (e) => {
+    const step = Number(e.target.closest('[data-step]')?.dataset.step);
+    if (!step) return;
+    const now = SLOTS.indexOf(document.body.dataset.slot ?? 'map');
+    prefs.outSlot = SLOTS[(now + step + SLOTS.length) % SLOTS.length];
+    savePrefs();
+    showSlot(prefs.outSlot);
+  });
+}
+
 // ---- render scheduling: one frame per change, nothing in between (see "render loop" below)
 let dirty = false, queued = false;
 function invalidate() {

@@ -8,13 +8,16 @@ telemetry is that moment of the race, so what plays gets detected like the rest.
 twice doesn't list it twice, and a jump in time takes new baselines, so it doesn't read as events.
 What happens live while the driver watches the past isn't seen, and only shows up if it gets played.
 
-Accidents: iRacing only tells me my own incident points, so those are exact (1x stays out of them).
-Anybody else's come from DriverInfo when the session gives them (as far as known, to admins); otherwise
-they are estimated: a car going far slower than its class does at that point of the track lost control
-or hit something, and a wide line doesn't slow anyone that much. Estimates carry est: True.
+Accidents: 1x stays out of them. Mine are exact and instant. Everyone else's points are in the session
+results (ResultsPositions[].Incidents, seen in an official session), which come when iRacing updates the
+session info, so late: the moment comes from the slowdown that went before them, a car far under the
+pace of its class at that point of the track. With no results yet (first lap of a race) the slowdown
+alone is the accident, estimated: est True, 4x with someone right there, 2x otherwise.
 """
 from __future__ import annotations
 
+import json
+import os
 from types import SimpleNamespace
 
 MAX_EVENTS = 6000
@@ -28,7 +31,7 @@ ACC_RATIO = 0.45      # this far under the pace of the class there, twice in a r
 ACC_FAST = 15.0       # m/s: a pace under this says nothing (hairpin, or no data yet)
 ACC_COOLDOWN = 15.0   # s, per car: it stays slow for a while
 ACC_NEAR = 15.0       # m: somebody this close at that moment: contact
-EXACT_WINDOW = 30.0   # s: the session info arrives late, the slowdown tells when it happened
+EXACT_WINDOW = 180.0  # s: the results arrive late; a slowdown this recent is when it happened
 SAME_EVENT = 3.0      # s: same event, same cars, this close in time: seen twice
 SEEK = 5.0            # s skipped between two frames: a jump in the replay, not racing
 PASS_COOLDOWN = 6.0   # same two cars, again this soon: the same fight
@@ -53,6 +56,7 @@ class EventLog:
         self.ver = 0
         self._next = 0
         self._seen = {}   # what is listed, for a replay seen twice
+        self._saved = None   # what load() found, until the sub-session is known
         self._f = None
         self._new_session(None, None)
 
@@ -75,8 +79,8 @@ class EventLog:
             self._cbest[c] = min(b, self._cbest.get(c, b))
         self._top = {i: (f.laps.get(i) or (None,))[0] for i in f.present}
         self._seq, self._pending, self._pair_t, self._fight = {}, {}, {}, {}
-        self._pace, self._acc_pos, self._acc_low, self._acc_t, self._slow_t = {}, {}, {}, {}, {}
-        self._counts = dict(f.counts)
+        self._pace, self._acc_pos, self._acc_low, self._acc_t, self._slow = {}, {}, {}, {}, {}
+        self._counts = dict(f.counts)   # what is already there isn't news
         self._pit = {i: bool(f.pitr[i]) for i in f.present}
         self._pit_in, self._pit_out = {}, {}
         self._surf = {i: f.surf[i] for i in f.present}
@@ -110,6 +114,27 @@ class EventLog:
             del self.by_id[self.items.pop(0)["id"]]
         return e
 
+    def save(self, path):
+        """Kept on disk so that restarting the app mid-event doesn't lose the list."""
+        tmp = f"{path}.tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"sub": self.sub, "items": self.items}, fh)
+        os.replace(tmp, path)
+
+    def load(self, path):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                self._saved = json.load(fh)
+        except (OSError, ValueError):
+            self._saved = None
+
+    def _restore(self, items):
+        self.items = items[-MAX_EVENTS:]
+        self.by_id = {e["id"]: e for e in self.items}
+        self._next = max(self.by_id, default=-1) + 1
+        for e in self.items:
+            self._seen.setdefault((e["sn"], e["k"], e.get("i"), e.get("j"), e.get("v")), []).append(e["t"])
+
     def drain(self):
         new, self.new = self.new, []
         return new
@@ -127,6 +152,9 @@ class EventLog:
             self.sub = f.sub
             self.items, self.new, self.by_id = [], [], {}
             self._seen = {}
+            saved, self._saved = self._saved, None
+            if saved and saved.get("sub") == f.sub:
+                self._restore(saved.get("items") or [])
             self.cleared = True
             self.ver += 1
             self.sid = None
@@ -306,17 +334,18 @@ class EventLog:
                 self.add(r["t0"], "fight", i=back, j=front, d=round(r["last"] - r["t0"], 1), lap=r["lap"], cl=r["at"][back], cj=r["at"][front])
 
     def _exact_incidents(self, f):
-        """Somebody else's points, if the session tells them."""
+        """Everyone else's points, from the session results."""
         for i, n in f.counts.items():
-            was = self._counts.get(i, n)
+            was = self._counts.get(i, 0)
             self._counts[i] = n
             if n - was >= 2 and i != f.me:
-                t = self._slow_t.get(i, 0)
-                self.add(t if f.t - t < EXACT_WINDOW else f.t, "acc", i=i, x=n - was, est=False)
+                s = self._slow.pop(i, None)
+                t, near, lap = s if s and f.t - s[0] < EXACT_WINDOW else (f.t, None, self.lap_of(i))
+                self.add(t, "acc", i=i, j=near, x=n - was, est=False, cl=lap)
 
     def _accidents(self, f, dt):
-        """Estimate, for the others: far under the pace of the class at that point of the track."""
-        if f.flags & CAUTION or not f.length or f.counts_known:
+        """A car far under the pace of the class at that point of the track: when, and who was there."""
+        if f.flags & CAUTION or not f.length:
             self._acc_pos = {}
             return
         for i in f.present:
@@ -338,7 +367,6 @@ class EventLog:
                 self._acc_low.pop(i, None)
                 continue
             first = self._acc_low.setdefault(i, f.t)
-            self._slow_t[i] = first
             if first != f.t and f.t - self._acc_t.get(i, -1e9) > ACC_COOLDOWN:
                 self._acc_t[i] = f.t
                 near, gap = None, ACC_NEAR / f.length
@@ -348,7 +376,9 @@ class EventLog:
                         d = min(d, 1.0 - d)
                         if d < gap:
                             near, gap = k, d
-                self.add(first, "acc", i=i, j=near, x=4 if near is not None else 2, est=True)
+                self._slow[i] = (first, near, self.lap_of(i))
+                if not f.counts_known:
+                    self.add(first, "acc", i=i, j=near, x=4 if near is not None else 2, est=True)
 
     def _stops(self, f):
         racing = f.kind == "race" and f.state == 4 and self._green_t is not None and f.t - self._green_t > STOP_GRACE
