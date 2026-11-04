@@ -19,7 +19,10 @@ export const trackmap = {
     this.fit = null;
     this.fitVer = -1;
     this.noteKey = '';
-    new ResizeObserver(() => { this.fitVer = -1; this.size(); }).observe(this.cv.parentElement);
+    this.bgKey = '';
+    this.fonts = 0;   // the turn numbers were maybe drawn before Montserrat arrived
+    document.fonts.addEventListener('loadingdone', () => { this.fonts++; S.invalidate(); });
+    new ResizeObserver(() => { this.fitVer = -1; this.size(); S.invalidate(); }).observe(this.cv.parentElement);
     this.size();
   },
 
@@ -69,6 +72,49 @@ export const trackmap = {
     if (this.fitVer !== S.track.ver) { this.compute(pts, S.track.turns || []); this.fitVer = S.track.ver; }
     const u = this.u;   // size unit, see compute()
     this.off = S.track.offset || 0;
+    // the track doesn't change: drawn once on the side, only the cars are drawn on every update
+    const key = [S.track.ver, this.off, this.W, this.H, this.dpr, S.meta.sectors, this.fonts].join('|');
+    if (key !== this.bgKey) { this.bgKey = key; this.drawTrack(S, pts); }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(this.bg, 0, 0);
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.lineJoin = ctx.lineCap = 'round';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+    // cars: a disc with the class position; class colours only in multiclass
+    const multi = S.classes.length > 1, me = st.me.i;
+    const disc = (c, r, fill, txt, ring) => {
+      const [x, y] = this.fit(this.at(pts, c.pct));
+      ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = fill; ctx.fill();
+      ctx.lineWidth = Math.max(1.2, u * 0.2); ctx.strokeStyle = ring; ctx.stroke();
+      if (txt != null) { ctx.font = `600 ${(r * 1.05).toFixed(1)}px Montserrat, sans-serif`; ctx.fillStyle = txt.col; ctx.fillText(txt.t, x, y + 0.5); }
+      return [x, y];
+    };
+    const solo = st.session.kind === 'qualify';   // qualifying: only me on the map
+    if (!solo) {
+      for (const c of st.cars) {
+        if (c.i === me || c.pct == null || c.pct < 0 || c.srf < 0) continue;
+        const col = multi ? S.classMap.get(S.drivers[c.i]?.cls)?.color || '#8a8a8f' : '#f4b400';   // single class: amber
+        ctx.globalAlpha = c.pit ? 0.45 : 1;
+        disc(c, u, col, { t: c.cp ?? '–', col: '#111112' }, c.i === S.sel ? '#f4f2ec' : '#111112');
+      }
+      ctx.globalAlpha = 1;
+    }
+    // me: the CB mark, a bit bigger, ringed with my class colour in multiclass
+    const mc = st.cars.find((c) => c.i === me);
+    if (mc && mc.pct >= 0) {
+      const ring = multi ? S.classMap.get(S.drivers[me]?.cls)?.color || '#f4b400' : '#f4b400';
+      const r = u * 1.35, [x, y] = disc(mc, r, '#111112', null, ring);
+      if (this.logo.complete) ctx.drawImage(this.logo, x - r * 0.75, y - r * 0.52, r * 1.5, r * 1.03);
+    }
+  },
+
+  // outline, sector ticks and turn numbers, on a canvas of their own
+  drawTrack(S, pts) {
+    this.bg ??= document.createElement('canvas');
+    this.bg.width = this.cv.width; this.bg.height = this.cv.height;
+    const ctx = this.bg.getContext('2d'), u = this.u;
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     const P = pts.map(this.fit);
 
     // asphalt ribbon
@@ -96,33 +142,6 @@ export const trackmap = {
       ctx.font = `700 ${(u * 1.15).toFixed(1)}px Montserrat, sans-serif`;
       ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(2.5, u * 0.45); ctx.strokeStyle = '#111112'; ctx.strokeText(label, x, y + 0.5);
       ctx.fillStyle = '#f4f2ec'; ctx.fillText(label, x, y + 0.5);
-    }
-
-    // cars: a disc with the class position; class colours only in multiclass
-    const multi = S.classes.length > 1, me = st.me.i;
-    const disc = (c, r, fill, txt, ring) => {
-      const [x, y] = this.fit(this.at(pts, c.pct));
-      ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = fill; ctx.fill();
-      ctx.lineWidth = Math.max(1.2, u * 0.2); ctx.strokeStyle = ring; ctx.stroke();
-      if (txt != null) { ctx.font = `600 ${(r * 1.05).toFixed(1)}px Montserrat, sans-serif`; ctx.fillStyle = txt.col; ctx.fillText(txt.t, x, y + 0.5); }
-      return [x, y];
-    };
-    const solo = st.session.kind === 'qualify';   // qualifying: only me on the map
-    if (!solo) {
-      for (const c of st.cars) {
-        if (c.i === me || c.pct == null || c.pct < 0 || c.srf < 0) continue;
-        const col = multi ? S.classMap.get(S.drivers[c.i]?.cls)?.color || '#8a8a8f' : '#f4b400';   // single class: amber
-        ctx.globalAlpha = c.pit ? 0.45 : 1;
-        disc(c, u, col, { t: c.cp ?? '–', col: '#111112' }, c.i === S.sel ? '#f4f2ec' : '#111112');
-      }
-      ctx.globalAlpha = 1;
-    }
-    // me: the CB mark, a bit bigger, ringed with my class colour in multiclass
-    const mc = st.cars.find((c) => c.i === me);
-    if (mc && mc.pct >= 0) {
-      const ring = multi ? S.classMap.get(S.drivers[me]?.cls)?.color || '#f4b400' : '#f4b400';
-      const r = u * 1.35, [x, y] = disc(mc, r, '#111112', null, ring);
-      if (this.logo.complete) ctx.drawImage(this.logo, x - r * 0.75, y - r * 0.52, r * 1.5, r * 1.03);
     }
   },
 };

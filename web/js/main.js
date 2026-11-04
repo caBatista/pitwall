@@ -1,4 +1,4 @@
-import { prefs, savePrefs, clock } from './util.js';
+import { prefs, savePrefs, clock, fx } from './util.js';
 import { standings } from './standings.js';
 import { relative } from './relative.js';
 import { trackmap } from './map.js';
@@ -12,6 +12,7 @@ if (params.get('bg') === 'transparent') document.body.classList.add('transparent
 // ---- shared store -----------------------------------------------------------
 const S = {
   st: null,            // latest state frame
+  raw: '',             // ... as it came, to spot a repeated frame
   drivers: {},         // carIdx -> driver
   classes: [], classMap: new Map(),
   meta: {},
@@ -21,6 +22,7 @@ const S = {
   connected: false,
   ws: null,
   send(obj) { if (S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify(obj)); },
+  invalidate,
 };
 
 // ---- widgets -----------------------------------------------------------------
@@ -45,13 +47,20 @@ if (params.get('w')) {
 }
 for (const [w, el] of widgets) w.mount(el, S);
 
-let dirty = false;
+// ---- render scheduling: one frame per change, nothing in between (see "render loop" below)
+let dirty = false, queued = false;
+function invalidate() {
+  dirty = true;
+  if (!queued) { queued = true; requestAnimationFrame(frame); }
+}
+addEventListener('click', invalidate);   // a row selected, a mode changed: show it even with the sim paused
+addEventListener('input', invalidate);
 // ---- UI scale: ?zoom=1.2 for this screen, or +/- keys (saved), 0 resets ----------------
 function setZoom(z) {
   z = Math.round(Math.min(2, Math.max(0.7, z)) * 100) / 100;
   document.documentElement.style.setProperty('--zoom', z);
   if (on.has(trackmap)) { trackmap.fitVer = -1; trackmap.size(); }
-  dirty = true;
+  invalidate();
   return z;
 }
 const on = new Set(widgets.map(([w]) => w));
@@ -120,21 +129,23 @@ function connect() {
   const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
   S.ws = ws;
   ws.onopen = () => { S.wsUp = true; status(); };
-  ws.onclose = () => { S.wsUp = false; S.connected = false; status(); setTimeout(connect, 1000); };
+  ws.onclose = () => { S.wsUp = false; S.connected = false; S.raw = ''; status(); setTimeout(connect, 1000); };
   ws.onmessage = (e) => {
+    // sim paused / nothing new: the 20 Hz stream repeats itself, unless an effect has to keep running
+    if (e.data === S.raw && !fx.live) return;
     const m = JSON.parse(e.data);
     switch (m.type) {
       case 'hello': S.source = m.source; break;
       case 'drivers':
         S.drivers = m.drivers; S.meta = m.meta || {}; S.classes = m.classes || [];
         S.classMap = new Map(S.classes.map((c) => [c.id, c]));
-        slow = 0; dirty = true; break;
-      case 'track': S.track = m.points ? m : null; if (!m.points && S.st) S.track = null; break;
-      case 'wx': S.wxHist = m.hist || []; break;
+        slow = 0; invalidate(); break;
+      case 'track': S.track = m.points ? m : null; if (!m.points && S.st) S.track = null; invalidate(); break;
+      case 'wx': S.wxHist = m.hist || []; invalidate(); break;
       case 'state':
         S.connected = m.connected !== false;
-        if (m.connected === false) { S.st = null; status(); return; }
-        S.st = m; dirty = true;
+        if (m.connected === false) { S.st = null; S.raw = ''; status(); return; }
+        S.st = m; S.raw = e.data; invalidate();
         // what the board shows depends on the session (see body[data-kind] in app.css)
         if (m.session && document.body.dataset.kind !== m.session.kind) document.body.dataset.kind = m.session.kind;
         // race over: the board becomes the results (standings only)
@@ -145,20 +156,21 @@ function connect() {
 }
 connect();
 
-// ---- render loop (fast widgets every frame, slow ones twice a second) --------------
+// ---- render loop (fast widgets on every change, slow ones twice a second) --------------
+// Not a free-running requestAnimationFrame: at 165 Hz that keeps the browser's frame pipeline awake
+// for nothing, data arrives at 20 Hz. The next frame is requested by what needs one (invalidate).
 // only the mounted widgets: with ?w= the others never ran mount()
 let slow = 0;
 const fast = [standings, relative, trackmap].filter((w) => on.has(w));
 const slowW = [fuel, weather, laplog].filter((w) => on.has(w));
 function frame(now) {
-  if (dirty && S.st) {
-    dirty = false;
-    try {
-      for (const w of fast) w.update(S);
-      if (now - slow > 400) { slow = now; header(); status(); for (const w of slowW) w.update(S); }
-    } catch (err) { console.error(err); }
-  }
-  requestAnimationFrame(frame);
+  queued = false;
+  if (!dirty || !S.st) return;
+  dirty = false;
+  fx.live = false;
+  try {
+    for (const w of fast) w.update(S);
+    if (now - slow > 400) { slow = now; header(); status(); for (const w of slowW) w.update(S); }
+  } catch (err) { console.error(err); }
 }
-requestAnimationFrame(frame);
 setInterval(status, 1000);

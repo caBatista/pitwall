@@ -26,6 +26,7 @@ export const fuel = {
     tgt.addEventListener('input', () => { prefs.targetLaps = Math.max(1, Number(tgt.value) || 1); savePrefs(); });
     this.tgt = tgt;
     this.key = '';
+    this.frac = 0;
   },
 
   update(S) {
@@ -47,8 +48,16 @@ export const fuel = {
     const fuelLaps = avg && lvl != null ? lvl / avg : null;
     const frac = tank ? Math.min(1, Math.max(0, lvl / tank)) : 0;
     const bar = q('#fu-bar');
-    bar.style.width = (frac * 100).toFixed(1) + '%';
-    bar.className = fuelLaps != null && fuelLaps < 3 ? 'low' : fuelLaps != null && fuelLaps < 6 ? 'mid' : '';
+    // the .4 s slide is for a real change (a stop). Burning fuel moves it by a fraction of a pixel every
+    // update, and a width transition that never ends is a layout per display frame, all race long
+    const width = (frac * 100).toFixed(1) + '%';
+    if (width !== this.width) {
+      bar.classList.toggle('still', Math.abs(frac - this.frac) < 0.02);
+      bar.style.width = this.width = width;
+      this.frac = frac;
+    }
+    bar.classList.toggle('low', fuelLaps != null && fuelLaps < 3);
+    bar.classList.toggle('mid', fuelLaps != null && fuelLaps >= 3 && fuelLaps < 6);
     const v = fmt.vol(lvl);
     q('#fu-lvl').textContent = v == null ? '–' : v.toFixed(1);
     q('#fu-u').textContent = fmt.volU();

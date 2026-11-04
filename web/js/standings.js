@@ -1,4 +1,4 @@
-import { esc, lapTime, gapText, prefs, savePrefs, flagHtml, makeHtml, stHtml, talkHtml, tyreHtml, HELMET, OUT, flagFx, irHtml, pitHtml, ST, fitIr, irKeyOf, INV } from './util.js';
+import { esc, lapTime, gapText, prefs, savePrefs, flagHtml, makeHtml, stHtml, talkHtml, tyreHtml, HELMET, OUT, flagFx, irHtml, pitHtml, ST, fitIr, irKeyOf, INV, patchRows } from './util.js';
 
 /**
  * Standings. Multiclass-aware: by default cars are grouped per class (each with
@@ -23,17 +23,16 @@ export const standings = {
     this.meBar = root.querySelector('#st-me');
     root.addEventListener('click', (e) => {
       const seg = e.target.closest('[data-mode]');
-      if (seg) { prefs.standMode = seg.dataset.mode; savePrefs(); this.last = ''; return; }
+      if (seg) { prefs.standMode = seg.dataset.mode; savePrefs(); return; }
       const chip = e.target.closest('[data-cls]');
       if (chip) {
         const id = Number(chip.dataset.cls);
         prefs.classFilter = prefs.classFilter === id ? null : id;
-        savePrefs(); this.last = ''; return;
+        savePrefs(); return;
       }
       const row = e.target.closest('.srow[data-i]');
-      if (row) { const i = Number(row.dataset.i); S.sel = S.sel === i ? null : i; this.last = ''; }
+      if (row) { const i = Number(row.dataset.i); S.sel = S.sel === i ? null : i; }
     });
-    this.last = '';
     this.lastCtl = '';
   },
 
@@ -67,10 +66,10 @@ export const standings = {
     // their k-th latest lap minus my k-th latest: + they are slower, - they are faster
     // (* = one of the two laps was invalidated / had an incident)
     const delta = (c, k) => {
-      if (c.i === st.me.i || c.lh?.[k] == null || myLaps[k] == null) return '<div class="dl"></div>';
+      if (c.i === st.me.i || c.lh?.[k] == null || myLaps[k] == null) return ['dl', ''];
       const v = Math.round((c.lh[k] - myLaps[k]) * 10) / 10;
       const x = c.lx?.[k] || myCar.lx?.[k];
-      return `<div class="dl ${v > 0 ? 'slower' : v < 0 ? 'faster' : ''}">${v > 0 ? '+' : ''}${v.toFixed(1)}${x ? INV : ''}</div>`;
+      return [`dl ${v > 0 ? 'slower' : v < 0 ? 'faster' : ''}`, `${v > 0 ? '+' : ''}${v.toFixed(1)}${x ? INV : ''}`];
     };
 
     // race over: the results, nothing live - no tags but the chequered flag (finished), no tyre / int / gap / last / delta
@@ -90,58 +89,49 @@ export const standings = {
       const [lic, sr] = (d.lic || '').split(' ');
       const gain = isRace ? (inGroup ? c.pgc : c.pg) : null;   // positions gained since the start
       const pg = gain ? `<span class="pg ${gain > 0 ? 'up' : 'down'}">${gain > 0 ? '▲' : '▼'}${Math.abs(gain)}</span>` : (isRace ? '<span class="pg"></span>' : '');
-      if (over) return `<div class="rrow srow over ${me ? 'me' : ''} ${S.sel === c.i ? 'sel' : ''}" data-i="${c.i}">
-        <div class="rpos">${pos}</div>
-        <div class="rcar" style="--cc:${cls.color}"><span class="rn">${esc(d.num)}</span>${pg}<span class="mk">${makeHtml(d.make)}</span></div>
-        ${flagHtml(d.country)}
-        <div class="rname"><span class="nm">${esc(d.name)}</span></div>
-        <div class="sr" style="--lc:${d.licColor}">${lic ? `<b>${esc((sr || '').slice(0, 3))}</b><i>${esc(lic)}</i>` : ''}</div>
-        <div class="irb">${irHtml(d.ir, c.irg, isRace)}</div>
-        <div class="t ${c.cb ? 'cb' : ''}">${c.best ? lapTime(c.best) : '-:--.---'}</div>
-        <div class="sflag">${c.fin ? ST.fin : ''}</div>
-      </div>`;
-      return `<div class="rrow srow ${me ? 'me' : ''} ${S.sel === c.i ? 'sel' : ''} ${off || c.pit ? 'pitrow' : ''}" data-i="${c.i}">
-        <div class="rpos">${pos}</div>
-        <div class="rcar" style="--cc:${cls.color}"><span class="rn">${esc(d.num)}</span>${pg}<span class="mk">${makeHtml(d.make)}</span></div>
-        ${flagHtml(d.country)}
-        <div class="rname"><span class="nm">${esc(d.name)}</span>${c.out ? OUT : ''}${pitHtml(c, st.session?.kind)}</div>
-        <div class="sr" style="--lc:${d.licColor}">${lic ? `<b>${esc((sr || '').slice(0, 3))}</b><i>${esc(lic)}</i>` : ''}</div>
-        <div class="irb">${irHtml(d.ir, c.irg, isRace)}</div>
-        <div class="c">${tyreHtml(c.tc)}</div>
-        <div class="t dim">${intTxt}</div>
-        <div class="t ${leader ? 'dim' : ''}">${gapTxt}</div>
-        <div class="t ${c.pb ? 'pb' : ''}">${c.last ? lapTime(c.last) + (c.lastx ? INV : '') : '-:--.---'}</div>
-        <div class="t ${c.cb ? 'cb' : ''}">${c.best ? lapTime(c.best) : '-:--.---'}</div>
-        ${delta(c, 0)}${delta(c, 1)}${delta(c, 2)}
-        <div class="sflag">${talkHtml(st.talk === c.i)}<span class="fxw" style="${flagFx('s' + c.i, c.fl)}">${stHtml(c, true)}</span></div>
-      </div>`;
+      const cells = [
+        ['rpos', pos],
+        ['rcar', `<span class="rn">${esc(d.num)}</span>${pg}<span class="mk">${makeHtml(d.make)}</span>`, `--cc:${cls.color}`],
+        ['fc', flagHtml(d.country)],
+        ['rname', `<span class="nm">${esc(d.name)}</span>${over ? '' : (c.out ? OUT : '') + pitHtml(c, st.session?.kind)}`],
+        ['sr', lic ? `<b>${esc((sr || '').slice(0, 3))}</b><i>${esc(lic)}</i>` : '', `--lc:${d.licColor}`],
+        ['irb', irHtml(d.ir, c.irg, isRace)],
+      ];
+      const best = [`t ${c.cb ? 'cb' : ''}`, c.best ? lapTime(c.best) : '-:--.---'];
+      if (over) cells.push(best, ['sflag', c.fin ? ST.fin : '']);
+      else cells.push(
+        ['c', tyreHtml(c.tc)],
+        ['t dim', intTxt],
+        [`t ${leader ? 'dim' : ''}`, gapTxt],
+        [`t ${c.pb ? 'pb' : ''}`, c.last ? lapTime(c.last) + (c.lastx ? INV : '') : '-:--.---'],
+        best,
+        delta(c, 0), delta(c, 1), delta(c, 2),
+        ['sflag', `${talkHtml(st.talk === c.i)}<span class="fxw" style="${flagFx('s' + c.i, c.fl)}">${stHtml(c, true)}</span>`],
+      );
+      return { key: c.i, i: c.i, cls: `rrow srow ${over ? 'over' : ''} ${me ? 'me' : ''} ${S.sel === c.i ? 'sel' : ''} ${!over && (off || c.pit) ? 'pitrow' : ''}`, cells };
     };
 
     // class header = title row: class, drivers and SOF over pos..iR, then the column titles
-    const head = (name, color, n, sof) => `<div class="ghead srow${over ? ' over' : ''}" style="--cc:${color}">
+    const head = (key, name, color, n, sof) => ({ key, cls: `ghead srow${over ? ' over' : ''}`, style: `--cc:${color}`, html: `
         <div class="gl">${esc(name)}<span class="gn" title="Drivers">${HELMET}${n}</span>${sof ? `<span class="gn">SOF ${sof}</span>` : ''}</div>
         ${over ? '<div class="r">Fastest</div><div class="c">Flag</div>' : `<div class="c">Tyre</div><div class="r">Int</div><div class="r">Gap</div><div class="r">Last</div><div class="r">Fastest</div>
-        <div class="c dhead">Delta</div><div class="c">Flag</div>`}</div>`;
+        <div class="c dhead">Delta</div><div class="c">Flag</div>`}` });
 
-    let html = '';
+    const rows = [];
     if (grouped) {
       for (const cl of S.classes) {
         const list = byCls.get(cl.id);
         if (!list || !list.length) continue;
-        html += head(cl.name, cl.color, cl.n, cl.sof);
-        html += list.map((c) => rowHtml(c, true)).join('');
+        rows.push(head('h' + cl.id, cl.name, cl.color, cl.n, cl.sof));
+        for (const c of list) rows.push(rowHtml(c, true));
       }
     } else {
       const all = [...byCls.values()].flat().sort((a, b) => (a.p ?? 999) - (b.p ?? 999));
-      html = head('Overall', 'var(--accent)', all.length, null) + all.map((c) => rowHtml(c, false)).join('');
+      rows.push(head('all', 'Overall', 'var(--accent)', all.length, null));
+      for (const c of all) rows.push(rowHtml(c, false));
     }
-    if (!html) html = '<div class="map-note"><b>No cars yet</b>Cars appear here as soon as they are on track.</div>';
-    if (html !== this.last) {
-      const keep = this.body.scrollTop;
-      this.body.innerHTML = html;
-      this.body.scrollTop = keep;
-      this.last = html;
-    }
+    if (!rows.length) rows.push({ key: 'none', cls: 'map-note', html: '<b>No cars yet</b>Cars appear here as soon as they are on track.' });
+    patchRows(this.body, rows);
     fitIr(this.body, irKeyOf(S, st.cars));
 
     // "you" summary bar

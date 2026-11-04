@@ -139,6 +139,59 @@ export function makeHtml(make) {
   return `<i class="make-i" title="${esc(make)}" style="--icon:url(${ICON_CDN}${make}.svg)"></i>`;
 }
 
+// ---- patching the DOM ------------------------------------------------------------------
+// Rows change 20x a second, nearly always one or two texts. Rebuilding them makes the browser
+// re-parse, re-decode the logos, re-shape every text and lay out and paint the whole panel: that
+// was most of the app's CPU. So nothing is written unless it changed, and rows stay in the DOM.
+export function setHtml(el, html) {
+  html = String(html);
+  if (el._html === html) return;
+  el._html = html;
+  const t = el.firstChild;
+  if (t && t.nodeType === 3 && !t.nextSibling && !/[<&]/.test(html)) t.data = html;   // same text node: cheapest
+  else if (/[<&]/.test(html)) el.innerHTML = html;
+  else el.textContent = html;
+}
+const setAttr = (el, name, v) => {
+  const k = '_' + name;
+  if (el[k] === v) return;
+  el[k] = v;
+  if (v) el.setAttribute(name, v); else el.removeAttribute(name);
+};
+function patchRow(el, r) {
+  setAttr(el, 'class', r.cls);
+  setAttr(el, 'style', r.style);
+  if (!r.cells) { setHtml(el, r.html ?? ''); return; }
+  // cells: [class, inner html, style?], always the same list for a same layout
+  if (el._cells?.length !== r.cells.length) {
+    el.replaceChildren(...r.cells.map(() => document.createElement('div')));
+    el._html = undefined;
+    el._cells = [...el.children];
+  }
+  r.cells.forEach(([cls, html, style], k) => {
+    const c = el._cells[k];
+    setAttr(c, 'class', cls); setAttr(c, 'style', style); setHtml(c, html);
+  });
+}
+/** Make root's children match rows ({key, cls, style?, i?, cells | html}), keeping each row's element.
+ *  Rows that leave stay in the pool: a car coming back doesn't decode its logos again. */
+export function patchRows(root, rows) {
+  const pool = root._pool || (root._pool = new Map());
+  let cur = root.firstElementChild;
+  for (const r of rows) {
+    let el = pool.get(r.key);
+    if (!el) {
+      el = document.createElement('div');
+      pool.set(r.key, el);
+    }
+    if (r.i != null && el.dataset.i !== String(r.i)) el.dataset.i = r.i;
+    patchRow(el, r);
+    if (el === cur) cur = cur.nextElementSibling;
+    else root.insertBefore(el, cur);
+  }
+  while (cur) { const n = cur.nextElementSibling; cur.remove(); cur = n; }
+}
+
 // ---- status tags (relative + standings) --------------------------------------
 // small inline icons, coloured through CSS (currentColor)
 const WATCH = '<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6.8" r="4.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 4.6v2.4l1.4 1M4.8 1.4h2.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
@@ -157,9 +210,14 @@ export const ST = {
 };
 // relative: flags only; standings: flags, then PIT, then the class fastest lap
 export const stHtml = (c, full = false) => ST[c.fl] || (full ? (c.pit ? ST.pit : c.cb ? ST.fast : '') : '');
-// on the radio: strong green, pulsing (computed per frame: rows are re-rendered all the time)
+// time-based effects on screen (radio pulse, pit blink, flag pop): they must keep moving even if the
+// data stops changing, see the render loop in main.js
+export const fx = { live: false };
+// on the radio: strong green, pulsing. Computed on each 20 Hz render, not a CSS animation: that would
+// need box-shadow on the main thread at the display's 165 Hz, for a smaller result on the eye
 export const talkHtml = (on) => {
   if (!on) return '';
+  fx.live = true;
   const k = (Math.sin(performance.now() / 160) + 1) / 2;
   return `<span class="st talk" title="On the radio" style="transform:scale(${(1 + 0.14 * k).toFixed(3)});box-shadow:0 0 ${(4 + 8 * k).toFixed(1)}px ${(1 + 2 * k).toFixed(1)}px rgba(0,214,90,${(0.35 + 0.4 * k).toFixed(2)})">${MIC}</span>`;
 };
@@ -192,7 +250,7 @@ export const irKeyOf = (S, cars) => Object.values(S.drivers).map((d) => d.ir).jo
 export const OUT = '<span class="tag out">OUT</span>';
 
 // last pit stop, RaceLab style: amber "L12" (lap of the stop) + time on pit road, outlined.
-// The time blinks while the car is still in the pits (rows re-render every frame: computed, not CSS).
+// The time blinks while the car is still in the pits (computed on each render: only one class changes).
 // PIT_ALL: true shows it in every session (testing); races only otherwise.
 // invalidated lap (or one with my incidents): an asterisk after the time
 export const INV = '<sup class="inv">*</sup>';
@@ -202,6 +260,7 @@ export function pitHtml(c, kind) {
   if (!c || c.pl == null || (!PIT_ALL && kind !== 'race')) return '';
   const s = Math.max(0, Math.floor(c.pd || 0));
   // in the pits: only the time blinks, filled <-> outlined, once a second
+  if (c.pip) fx.live = true;
   const fill = c.pip && Math.floor(performance.now() / 1000) % 2 === 0;
   const time = s >= 100 * 60 ? '∞' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   return `<span class="pitl"><b>L${c.pl}</b><i${fill ? ' class="on"' : ''}>${time}</i></span>`;
@@ -216,7 +275,7 @@ export function tyreHtml(tc) {
 // helmet for the class driver count
 export const HELMET = '<svg class="helmet" viewBox="0 0 14 12" aria-hidden="true"><path d="M1 8.5C1 4.4 3.9 1.2 7.6 1.2c3 0 5.4 2.1 5.4 5.2v2.1H8.2l-.9 1.7H2.4C1.6 10.2 1 9.5 1 8.5Z" fill="currentColor"/><path d="M7.4 4.2h5.3v2.4H7.4z" fill="#111112"/></svg>';
 
-// ---- change effects (rows are re-rendered every frame, so the fade is computed, not a CSS animation)
+// ---- change effects (computed on each render, not a CSS animation: only this element is touched)
 const FX = new Map();   // key -> {v: last value, t: when it changed}
 const FX_FLAG = 1400;
 // new flag on a car: the chip pops in (big, then settles)
@@ -224,6 +283,7 @@ export function flagFx(key, fl) {
   const now = performance.now(), f = FX.get('f' + key);
   if (!f || fl !== f.v) FX.set('f' + key, { v: fl, t: fl && f ? now : 0 });
   const g = FX.get('f' + key), k = 1 - (now - g.t) / FX_FLAG;
+  if (g.t && k > 0) fx.live = true;
   return g.t && k > 0 ? `transform:scale(${(1 + 0.6 * k * k).toFixed(3)})` : '';
 }
 

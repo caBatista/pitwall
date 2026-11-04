@@ -1,4 +1,4 @@
-import { esc, flagHtml, makeHtml, stHtml, talkHtml, OUT, flagFx, irHtml, pitHtml, fitIr, irKeyOf, INV } from './util.js';
+import { esc, flagHtml, makeHtml, stHtml, talkHtml, OUT, flagFx, irHtml, pitHtml, fitIr, irKeyOf, INV, patchRows } from './util.js';
 
 // lap time with one decimal: 211.827 -> 3:31.8
 const lap1 = (x) => {
@@ -23,10 +23,9 @@ export const relative = {
       </div>
       <div class="rel-body" id="rl-body"></div>`;
     this.body = root.querySelector('#rl-body');
-    this.last = '';
     root.addEventListener('click', (e) => {
       const r = e.target.closest('.rrow[data-i]');
-      if (r) { const i = Number(r.dataset.i); S.sel = S.sel === i ? null : i; this.last = ''; }
+      if (r) { const i = Number(r.dataset.i); S.sel = S.sel === i ? null : i; }
     });
   },
 
@@ -46,37 +45,39 @@ export const relative = {
       const [lic, sr] = (d.lic || '').split(' ');
       // best lap (like RaceLab); * = their latest lap was invalidated / had an incident
       const best = c.best ? `<span class="t ${c.cb ? 'cb' : ''}">${lap1(c.best)}${c.lastx ? INV : ''}</span>` : `<span class="t dim">-:--.-${c.lastx ? INV : ''}</span>`;
-      return `<div class="rpos">${c.cp || '–'}</div>
-        <div class="rcar" style="--cc:${cls.color}"><span class="rn">${esc(d.num)}</span><span class="mk">${makeHtml(d.make)}</span></div>
-        ${flagHtml(d.country)}
-        <div class="rname"><span class="nm">${esc(d.name)}</span>${extra}</div>
-        <div class="sr" style="--lc:${d.licColor}">${lic ? `<b>${esc((sr || '').slice(0, 3))}</b><i>${esc(lic)}</i>` : ''}</div>
-        <div class="irb">${irHtml(d.ir, c.irg, st.session?.kind === 'race')}</div>
-        <div class="rlast">${best}</div>`;
+      return [
+        ['rpos', c.cp || '–'],
+        ['rcar', `<span class="rn">${esc(d.num)}</span><span class="mk">${makeHtml(d.make)}</span>`, `--cc:${cls.color}`],
+        ['fc', flagHtml(d.country)],
+        ['rname', `<span class="nm">${esc(d.name)}</span>${extra}`],
+        ['sr', lic ? `<b>${esc((sr || '').slice(0, 3))}</b><i>${esc(lic)}</i>` : '', `--lc:${d.licColor}`],
+        ['irb', irHtml(d.ir, c.irg, st.session?.kind === 'race')],
+        ['rlast', best],
+      ];
     };
 
-    const row = (r, side) => {
-      if (!r) return '<div class="rrow empty"></div>';
-      const d = S.drivers[r.i];
-      if (!d) return '<div class="rrow empty"></div>';
+    // slots of the panel, top to bottom: a slot with no car keeps its height
+    const empty = (slot) => ({ key: 'e' + slot, cls: 'rrow empty', cells: [] });
+    const row = (r, side, slot) => {
+      const d = r && S.drivers[r.i];
+      if (!d) return empty(slot);
       const lap = r.dl > 0 ? `<span class="lapt up">+${r.dl}L</span>` : r.dl < 0 ? `<span class="lapt down">${r.dl}L</span>` : '';
       const t = Math.abs(r.dt);
       // no sign: the row order already says ahead/behind; 92.0 -> 1:32.0
       const tr = Math.round(t * 10) / 10;   // round first so 119.97 is 2:00.0, not 1:60.0
       const txt = tr >= 60 ? `${Math.floor(tr / 60)}:${(tr % 60).toFixed(1).padStart(4, '0')}` : tr.toFixed(1);
       const c = cars.get(r.i) || r;
-      return `<div class="rrow ${r.dl > 0 ? 'up' : r.dl < 0 ? 'down' : ''} ${r.pit ? 'pitrow' : ''} ${S.sel === r.i ? 'sel' : ''}" data-i="${r.i}">
-        ${cells(r.i, d, (r.out ? OUT : lap) + pitHtml(c, st.session?.kind) + `<span class="fxw" style="${flagFx('r' + r.i, c.fl)}">${stHtml(c)}</span>` + talkHtml(st.talk === r.i))}<div class="rt ${side}">${txt}</div></div>`;
+      const extra = (r.out ? OUT : lap) + pitHtml(c, st.session?.kind) + `<span class="fxw" style="${flagFx('r' + r.i, c.fl)}">${stHtml(c)}</span>` + talkHtml(st.talk === r.i);
+      return { key: r.i, i: r.i, cls: `rrow ${r.dl > 0 ? 'up' : r.dl < 0 ? 'down' : ''} ${r.pit ? 'pitrow' : ''} ${S.sel === r.i ? 'sel' : ''}`, cells: [...cells(r.i, d, extra), [`rt ${side}`, txt]] };
     };
 
-    const md = S.drivers[st.me.i];
-    const meRow = md ? `<div class="rrow me">${cells(st.me.i, md, (cars.get(st.me.i)?.out ? OUT : '') + pitHtml(cars.get(st.me.i), st.session?.kind) + `<span class="fxw" style="${flagFx('r' + st.me.i, cars.get(st.me.i)?.fl)}">${stHtml(cars.get(st.me.i) || {})}</span>` + talkHtml(st.talk === st.me.i))}<div class="rt">–</div></div>` : '<div class="rrow empty"></div>';
+    const md = S.drivers[st.me.i], mine = cars.get(st.me.i);
+    const meRow = md ? { key: 'me', cls: 'rrow me', cells: [...cells(st.me.i, md, (mine?.out ? OUT : '') + pitHtml(mine, st.session?.kind) + `<span class="fxw" style="${flagFx('r' + st.me.i, mine?.fl)}">${stHtml(mine || {})}</span>` + talkHtml(st.talk === st.me.i)), ['rt', '–']] } : empty('m');
 
     // ahead is ordered far → near already; pad on top so the layout never jumps
     const a = [...Array(Math.max(0, n - ahead.length)).fill(null), ...ahead];
     const b = [...behind, ...Array(Math.max(0, n - behind.length)).fill(null)];
-    const html = a.map((r) => row(r, 'ahead')).join('') + meRow + b.map((r) => row(r, 'behind')).join('');
-    if (html !== this.last) { this.body.innerHTML = html; this.last = html; }
+    patchRows(this.body, [...a.map((r, k) => row(r, 'ahead', 'a' + k)), meRow, ...b.map((r, k) => row(r, 'behind', 'b' + k))]);
     // the standings sizes the iRating chips (it has every driver); alone, the relative does
     if (!document.querySelector('#w-standings .irb')) fitIr(this.body, irKeyOf(S, st.cars));
   },

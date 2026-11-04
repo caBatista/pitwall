@@ -204,6 +204,7 @@ svg.tyre.wet { color: var(--blue); }
   display: grid; grid-template-columns: 34px 86px 22px minmax(90px, 1fr) 56px 84px 60px 58px; align-items: center; column-gap: 8px;
   height: 34px; padding: 0 8px 0 0; position: relative; overflow: hidden;
 }
+.rrow .fc { display: contents; }   /* the flag is the grid cell, inside a stable wrapper for patchRows */
 .rrow:hover { background: rgba(255, 255, 255, .035); }
 .fxw { display: inline-flex; transform-origin: center; }   /* a new flag pops in */
 .fxw:empty { display: none; }
@@ -326,6 +327,7 @@ svg.tyre.wet { color: var(--blue); }
 .fu-lvl span { margin-left: auto; color: var(--dim); font: 600 11px var(--num); }
 .fu-bar { height: 10px; border-radius: 3px; background: var(--line); overflow: hidden; }
 .fu-bar i { display: block; height: 100%; background: var(--accent); transition: width .4s; }
+.fu-bar i.still { transition: none; }
 .fu-bar i.mid { background: var(--accent-deep); }
 .fu-bar i.low { background: var(--red); }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 12px; }
