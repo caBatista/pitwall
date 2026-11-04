@@ -116,12 +116,13 @@ def main():
     p.add_argument("--mock-start", type=float, default=0.0, help=argparse.SUPPRESS)
     p.add_argument("--mock-cam", default=None, help=argparse.SUPPRESS)
     p.add_argument("--mock-wide", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--mock-out", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--windowed", action="store_true", help="start in a window (default: full screen)")
     p.add_argument("--render-hz", type=float, help="redraw the panels at most this many times a second (default: every update)")
     args = p.parse_args()
 
     cam = int(args.mock_cam) if (args.mock_cam or "").isdigit() else args.mock_cam
-    source = MockSource(speed=args.speed, start=args.mock_start, cam=cam, wide=args.mock_wide) if args.mock else IRacingSource()
+    source = MockSource(speed=args.speed, start=args.mock_start, cam=cam, wide=args.mock_wide, out=args.mock_out) if args.mock else IRacingSource()
     engine = Engine(TrackMapper(DATA / "maps", library_dir=BUNDLE / "maps" / "library"))
     port = free_port()
     ready = threading.Event()

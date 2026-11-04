@@ -11,8 +11,10 @@ from __future__ import annotations
 import math
 import re
 from collections import deque
+from types import SimpleNamespace
 from functools import lru_cache
 
+from .events import EventLog
 from .trackmap import TrackMapper
 
 BINS = 360
@@ -258,6 +260,8 @@ class Engine:
         self.drivers_ver = 0
         self.log = PassLog()
         self.fuel = FuelTracker()
+        self.ev = EventLog()
+        self.in_car = False
         self.wx_hist = deque(maxlen=720)  # 5 s samples = 1 hour
         self._wx_t = -1e9
         self._prev_t = None
@@ -310,6 +314,7 @@ class Engine:
             "category": wk.get("Category"),
             "seriesId": wk.get("SeriesID"),
             "subId": wk.get("SubSessionID"),
+            "replayFile": str(wk.get("SimMode") or "").lower() == "replay",   # a saved replay, not a live session
             "sectors": [round(float(x.get("SectorStartPct") or 0), 5) for x in (info.get("SplitTimeInfo") or {}).get("Sectors") or []],
         }
         # starting grid for "positions gained" (qualifying results, 0-based in iRacing)
@@ -918,6 +923,23 @@ class Engine:
 
         own = foc == me
 
+        # how far behind live the sim is showing: 60 replay frames a second, counted from the end
+        # (a saved replay has no live: what it plays is the race)
+        behind = (raw.get("ReplayFrameNumEnd") or 0) / 60.0 if raw.get("IsReplayPlaying") and not self.meta.get("replayFile") else 0.0
+        self.in_car = bool(raw.get("IsOnTrack"))
+        ev_frame = SimpleNamespace(
+            t=t, sub=self.meta.get("subId"), snum=snum, kind=kind, state=state, flags=int(raw.get("SessionFlags") or 0),
+            me=me, present=present, cls={i: self.drivers[i]["cls"] for i in present}, tot=tot, pct=pct, surf=surf, pitr=pitr,
+            best=best, cflags=cflags, car_flag=car_flag, cpos=cpos, fin=set(self._fin), laps=self._laps, inc=inc, 
+            laps_done=lambda i: (lapc[i] if lapc[i] is not None else -1), length=(self.meta.get("lengthKm") or 5.0) * 1000,
+        )
+        try:
+            self.ev.feed(ev_frame)
+        except Exception as exc:  # noqa: BLE001  - a wrong event must never cost the board in a race
+            if not self.ev.failed:
+                self.ev.failed = True
+                print(f"[pitwall] events error: {exc!r}", flush=True)
+
         def mine_t(v, arr):
             if v and v > 0:
                 return v
@@ -936,6 +958,7 @@ class Engine:
                 # my race length in laps, and whether it is an estimate (timed race, or lapped)
                 "raceLaps": race_laps[0] if race_laps else None, "raceLapsEst": bool(race_laps and race_laps[1]),
                 "tod": raw.get("SessionTimeOfDay"), "replay": bool(raw.get("IsReplayPlaying")),
+                "inCar": self.in_car, "behind": round(behind, 1), "num": snum, "player": me,
                 "units": "imperial" if raw.get("DisplayUnits") == 0 else "metric",
             },
             "me": {

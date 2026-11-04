@@ -5,6 +5,7 @@ import { trackmap } from './map.js';
 import { fuel } from './fuel.js';
 import { weather } from './weather.js';
 import { laplog } from './laplog.js';
+import { events } from './events.js';
 
 const params = new URLSearchParams(location.search);
 if (params.get('bg') === 'transparent') document.body.classList.add('transparent');
@@ -14,6 +15,7 @@ const S = {
   st: null,            // latest state frame
   raw: '',             // ... as it came, to spot a repeated frame
   drivers: {},         // carIdx -> driver
+  events: [], eventsVer: 0,   // Race Events, the whole session; S.eventsVer changes with the list
   classes: [], classMap: new Map(),
   meta: {},
   track: null,         // {key, status, ver, points}
@@ -25,7 +27,7 @@ const S = {
 };
 
 // ---- widgets -----------------------------------------------------------------
-const ALL = { standings, relative, map: trackmap, fuel, weather, laplog };
+const ALL = { standings, relative, map: trackmap, fuel, weather, laplog, events };
 const want = (params.get('w') || 'standings,relative,map,fuel,weather').split(',').map((s) => s.trim()).filter((k) => ALL[k]);
 const board = document.getElementById('board');
 const mk = (w) => {
@@ -40,7 +42,7 @@ if (params.get('w')) {
   for (const k of want) { const el = mk(ALL[k]); board.appendChild(el); widgets.push([ALL[k], el]); }
 } else {
   const bottom = document.createElement('div'); bottom.className = 'col-bottom';
-  for (const k of ['standings', 'laplog', 'relative', 'map']) { const el = mk(ALL[k]); board.appendChild(el); widgets.push([ALL[k], el]); }
+  for (const k of ['standings', 'laplog', 'relative', 'map', 'events']) { const el = mk(ALL[k]); board.appendChild(el); widgets.push([ALL[k], el]); }
   for (const k of ['fuel', 'weather']) { const el = mk(ALL[k]); bottom.appendChild(el); widgets.push([ALL[k], el]); }
   board.appendChild(bottom);
 }
@@ -142,6 +144,9 @@ function connect() {
         slow = 0; invalidate(); break;
       case 'track': S.track = m.points ? m : null; if (!m.points && S.st) S.track = null; invalidate(); break;
       case 'wx': S.wxHist = m.hist || []; invalidate(); break;
+      case 'events':
+        S.events = m.all || [...S.events, ...m.add].slice(-6000);
+        S.eventsVer++; slow = 0; invalidate(); break;
       case 'state':
         S.connected = m.connected !== false;
         if (m.connected === false) { S.st = null; S.raw = ''; status(); return; }
@@ -150,6 +155,8 @@ function connect() {
         if (m.session && document.body.dataset.kind !== m.session.kind) document.body.dataset.kind = m.session.kind;
         // race over: the board becomes the results (standings only)
         if (m.session) document.body.toggleAttribute('data-over', !!m.session.over);
+        // out of the car: standings, Race Events and the map
+        if (m.session) document.body.toggleAttribute('data-out', !m.session.inCar);
         break;
     }
   };
@@ -162,7 +169,7 @@ connect();
 // only the mounted widgets: with ?w= the others never ran mount()
 let slow = 0;
 const fast = [standings, relative, trackmap].filter((w) => on.has(w));
-const slowW = [fuel, weather, laplog].filter((w) => on.has(w));
+const slowW = [fuel, weather, laplog, events].filter((w) => on.has(w));
 // ?hz=10 (desktop: --render-hz 10) caps the panels below the 20 updates/s that arrive; default: no cap
 const minGap = 1000 / (Number(params.get('hz')) || Infinity);
 let drawn = 0, later = 0, settled = false;

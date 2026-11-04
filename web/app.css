@@ -111,8 +111,14 @@ body[data-kind="qualify"] .board:not(.solo), body[data-kind="test"] .board:not(.
   grid-template-areas: "standings map" "standings map" "standings bottom";
 }
 /* race over: the standings as the results (see .srow.over), next to the track map */
-body[data-over] .board > :not(#w-standings, #w-map) { display: none; }
+body[data-over] .board > :not(#w-standings, #w-map, #w-events) { display: none; }
 body[data-over] .board:not(.solo) { grid-template-columns: minmax(620px, 1fr) 1fr; grid-template-rows: 1fr; grid-template-areas: "standings map"; }
+/* out of the car: the standings, Race Events over the map at its usual size */
+#w-events { display: none; grid-area: events; }
+.board.solo #w-events { display: flex; grid-area: auto; }
+body[data-out] .board:not(.solo) #w-events { display: flex; }
+body[data-out] .board:not(.solo) #w-relative, body[data-out] .board:not(.solo) > .col-bottom { display: none; }
+body[data-out][data-kind] .board:not(.solo) { grid-template-rows: minmax(0, 1fr) 340px; grid-template-areas: "standings events" "standings map"; }
 .board.solo { grid-template-columns: 1fr; grid-template-rows: 1fr; grid-template-areas: none; }
 .board.solo > * { grid-area: auto !important; }
 
@@ -444,6 +450,8 @@ svg.tyre.wet { color: var(--blue); }
   .board > .col-bottom { grid-template-columns: 1fr; }
   #w-standings { max-height: 640px; }
   #w-map { min-height: 340px; }
+  body[data-out][data-kind] .board:not(.solo) { grid-template-rows: none; grid-template-areas: "standings" "events" "map"; }
+  #w-events { min-height: 420px; }
   .top { flex-wrap: wrap; gap: 12px 18px; }
   .s-body { overflow-x: auto; }
   .srow { min-width: 860px; }
@@ -462,3 +470,43 @@ sup.inv { color: var(--accent); font-size: .8em; line-height: 0; margin-left: 1p
   all: unset; padding: 7px 10px; border-radius: 4px; cursor: pointer; font: 600 12.5px var(--num); color: var(--txt); white-space: nowrap;
 }
 .ctx button:hover { background: var(--accent); color: var(--ink, #111112); }
+
+/* ---------- race events ---------- */
+.ev-kinds { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 8px; }
+.ev-kinds button {
+  padding: 3px 9px; border: 1px solid var(--line); border-radius: 7px; background: none; cursor: pointer;
+  color: var(--mute); font: 500 10px var(--mono); letter-spacing: .06em; text-transform: uppercase;
+}
+.ev-kinds button.on { color: var(--txt); border-color: var(--line-2); background: var(--bg-2); }
+.ev-body { flex: 1; min-height: 0; overflow-y: auto; margin: 0 8px 10px; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+.ev-lap { padding: 9px 6px 3px; color: var(--accent); font: 900 13px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; }
+.ev {
+  display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; width: 100%; height: 28px; padding: 0 8px 0 0;
+  background: none; border: 0; border-bottom: 1px solid var(--sep); cursor: pointer; text-align: left; font: 500 12.5px var(--num); color: var(--dim);
+}
+.ev:hover { background: rgba(255, 255, 255, .05); }
+.ev.on { background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+.ev span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev b { color: var(--txt); font-weight: 600; }
+.ev span i { margin-left: 4px; font-style: normal; font-variant-numeric: tabular-nums; color: var(--txt); }
+.ev em {
+  justify-self: start; margin-left: 6px; padding-left: 7px; border-left: 3px solid var(--cc, var(--accent));
+  font: 500 9.5px var(--mono); font-style: normal; letter-spacing: .05em; text-transform: uppercase; color: var(--dim);
+}
+.ev.gain em { color: var(--green); }
+.ev.loss em { color: var(--red); }
+.ev.g-inc em { color: var(--red); }
+.ev.g-pit em { color: var(--blue); }
+.ev.g-flag em { color: var(--accent); }
+.ev.k-fast em { color: var(--purple); }
+.ev.k-pb em { color: var(--green); }
+.ev.k-inv em { color: var(--accent); }
+.ev time { font: 500 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--mute); }
+.ev:hover time { color: var(--accent); }
+.ev-none { padding: 26px 8px; text-align: center; color: var(--dim); }
+.ev-live {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 14px; border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--accent) 10%, var(--card)); color: var(--dim); font: 500 11px var(--mono);
+}
+.ev-live b { color: var(--accent); font-variant-numeric: tabular-nums; }
+.ev-live .ghost-btn { color: var(--accent); border-color: var(--accent); }

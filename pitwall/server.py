@@ -74,6 +74,7 @@ class App:
                 await ws.send_str(dumps(self.engine.drivers_msg()))
             await ws.send_str(dumps(_clean(self.engine.track_msg())))
             await ws.send_str(dumps(self.engine.wx_msg()))
+            await ws.send_str(dumps({"type": "events", "all": self.engine.ev.items}))
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
                     try:
@@ -86,6 +87,11 @@ class App:
                         self.set_auto_fuel(data)
                     elif data.get("cmd") == "pit_tyre":
                         self.pit_tyre(data.get("tyre"))
+                    elif data.get("cmd") == "replay":
+                        self.replay(data.get("id"))
+                    elif data.get("cmd") == "replay_live":
+                        if not self.engine.in_car:
+                            self.source.replay_live()
                     elif data.get("cmd") == "focus":
                         self.focus(data.get("i"))
                     elif data.get("cmd") == "chat":
@@ -120,6 +126,14 @@ class App:
         d = self._driver(i)
         if d and d["num"]:
             self.source.focus(i, d["num"])
+
+    def replay(self, event_id):
+        """Show an event in the replay. iRacing has no replay with the driver in the car."""
+        hit = self.engine.ev.replay_target(event_id)
+        if hit and not self.engine.in_car:
+            session, ms, car = hit
+            d = self._driver(car)
+            self.source.replay(session, ms, d["num"] if d else None)
 
     def chat(self, i, to):
         d = self._driver(i)
@@ -184,6 +198,13 @@ class App:
         if time.time() - self._wx_sent > 5:
             self._wx_sent = time.time()
             out.append(dumps(self.engine.wx_msg()))
+        ev = self.engine.ev
+        if ev.cleared:
+            ev.cleared = False
+            ev.new = []
+            out.append(dumps({"type": "events", "all": ev.items}))
+        elif ev.new:
+            out.append(dumps({"type": "events", "add": ev.drain()}))
         out.append(dumps_clean(state))
         for text in out:
             await self.broadcast(text)

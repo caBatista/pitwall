@@ -1,4 +1,6 @@
-"""CPU of the desktop app: python tools/bench_cpu.py [--rounds 4] [--secs 40]
+"""CPU of the desktop app: python tools/bench_cpu.py [--rounds 4] [--secs 40] [amber] [out]
+
+amber: the board with the driver in the car; out: out of the car, with Race Events.
 
 The same script every time: mock at 1x, 26 cars, full screen. Each
 sample is the CPU time of the whole process tree (python + WebView2) over --secs, after --warm, in %
@@ -101,7 +103,7 @@ def in_front(root: int) -> bool:
 
 def sample(theme: str, secs: float, warm: float) -> tuple[float | None, bool]:
     exe = Path(sys.executable).with_name("pythonw.exe")
-    pr = subprocess.Popen([str(exe), "-m", "pitwall.desktop", "--mock", "--speed", "1", "--mock-start", "60"], cwd=ROOT)
+    pr = subprocess.Popen([str(exe), "-m", "pitwall.desktop", "--mock", "--speed", "1", "--mock-start", "60", *(["--mock-out"] if theme == "out" else [])], cwd=ROOT)
     try:
         time.sleep(warm)
         pids = tree(pr.pid)
@@ -119,7 +121,7 @@ def sample(theme: str, secs: float, warm: float) -> tuple[float | None, bool]:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("themes", nargs="*", default=["amber"])
+    ap.add_argument("themes", nargs="*", default=["amber", "out"])
     ap.add_argument("--rounds", type=int, default=4)
     ap.add_argument("--secs", type=float, default=40)
     ap.add_argument("--warm", type=float, default=15)

@@ -24,7 +24,7 @@ SCALARS = [
     "LapDistPct", "LapDeltaToBestLap", "LapDeltaToBestLap_OK",
     "LapBestLapTime", "LapLastLapTime", "LapCurrentLapTime",
     "Speed", "Gear", "RPM", "FuelLevel", "FuelLevelPct", "FuelUsePerHour",
-    "PlayerCarMyIncidentCount", "DisplayUnits", "IsReplayPlaying",
+    "PlayerCarMyIncidentCount", "DisplayUnits", "IsReplayPlaying", "ReplayFrameNumEnd",
     "YawNorth",
     "TrackTemp", "TrackTempCrew", "AirTemp", "TrackWetness", "Skies",
     "AirPressure", "RelativeHumidity", "WindVel", "WindDir", "Precipitation",
@@ -98,6 +98,20 @@ class IRacingSource:
         if self.ir.is_connected:
             self.ir.cam_switch_num(num, self.ir["CamGroupNumber"] or 1, self.ir["CamCameraNumber"] or 0)
 
+    def replay(self, session, ms, num):
+        """Show a moment of the replay, playing, on this car (None: the car on camera stays)."""
+        if self.ir.is_connected:
+            if num:
+                self.ir.cam_switch_num(num, self.ir["CamGroupNumber"] or 1, self.ir["CamCameraNumber"] or 0)
+            self.ir.replay_search_session_time(session, ms)
+            self.ir.replay_set_play_speed(1)
+
+    def replay_live(self):
+        import irsdk  # noqa: WPS433
+        if self.ir.is_connected:
+            self.ir.replay_search(irsdk.RpySrchMode.to_end)
+            self.ir.replay_set_play_speed(1)
+
     def open_chat(self, text):
         """Open the chat in the sim with text already typed; the driver writes the rest and presses Enter."""
         import irsdk  # noqa: WPS433
@@ -152,11 +166,13 @@ class MockSource:
     name = "simulator"
 
     def __init__(self, speed: float = 4.0, seed: int = 11, session: str = "Race", track_id: int = 9999,
-                 start: float = 0.0, cam=None, wide: bool = False):
+                 start: float = 0.0, cam=None, wide: bool = False, out: bool = False):
         self.speed = max(0.1, speed)
         self.classes = _CLASSES_WIDE if wide else _CLASSES
         self.start, self.cam = start, cam   # jump to this session time; focused car (a car index, or "cycle")
         self.seed = seed
+        self.out = out   # the driver is out of the car (Race Events, replay)
+        self.watch = None   # session time the replay is showing; None: live
         self.track_id = track_id   # a real TrackID makes the map come from maps/library
         self.session = session   # iRacing SessionType to pretend: Race / Open Qualify / Practice / Offline Testing
         self._reset()
@@ -167,6 +183,7 @@ class MockSource:
         self._build_track()
         self._build_cars()
         self.t = 0.0
+        self.mishap = random.Random(5)   # apart from rng: the race stays the same race
         self._wall = time.perf_counter()
         self._sent_info = False
         self.race_len = 3600.0
@@ -287,6 +304,17 @@ class MockSource:
     def focus(self, i, num):
         self.cam = i
 
+    def replay(self, session, ms, num):
+        print(f"[mock] replay: session {session} at {ms / 1000:.1f} s, car {num}", flush=True)
+        self.watch = ms / 1000
+        car = next((c for c in self.cars if str(c["num"]) == str(num)), None)
+        if car:
+            self.cam = car["idx"]
+
+    def replay_live(self):
+        print("[mock] replay: back to live", flush=True)
+        self.watch = None
+
     def open_chat(self, text):
         print(f"[mock] chat: {text!r}", flush=True)
 
@@ -368,6 +396,10 @@ class MockSource:
                             if self.sv_flags & 0x10:
                                 c["fuel"] = min(110.0, c["fuel"] + self.sv_fuel)
                             self.tyre, self.sv_flags = self.sv_tyre, self.sv_flags & 0x10
+            if self.t > 30 and c["pit"] is None and self.mishap.random() < 0.0012 * dt:   # off track, sometimes stopped
+                c["off"], c["off_stop"] = self.t + self.mishap.uniform(1.5, 7.0), self.mishap.random() < 0.3
+            if self.t < c.get("off", 0):
+                v *= 0.0 if c["off_stop"] else 0.55
             c["v"] = v
             nd = c["d"] + v * dt / self.L
             # lap bookkeeping
@@ -421,7 +453,7 @@ class MockSource:
             i = c["idx"]
             lapc[i] = math.floor(c["d"])
             pct[i] = c["d"] % 1.0
-            surf[i] = 1 if c["pit"] == "stall" else (2 if c["pit"] else 3)
+            surf[i] = 1 if c["pit"] == "stall" else (2 if c["pit"] else (0 if self.t < c.get("off", 0) else 3))
             pitr[i] = 1 if c["pit"] else 0
             last[i] = c["last"]
             best[i] = c["best"]
@@ -449,14 +481,15 @@ class MockSource:
             "SessionTimeOfDay": 12 * 3600 + t, "SessionInfoUpdate": 1, "PlayerCarIdx": 0,
             "CamCarIdx": int(time.perf_counter() / 10) % len(self.cars) if self.cam == "cycle" else (self.cam or 0),
             "PlayerTireCompound": self.tyre, "PitSvTireCompound": self.sv_tyre, "PitSvFlags": self.sv_flags, "PitSvFuel": self.sv_fuel,
-            "IsOnTrack": True, "OnPitRoad": pit, "Lap": max(0, lapc[0] + 1), "LapCompleted": lapc[0],
+            "IsOnTrack": not self.out, "OnPitRoad": pit, "Lap": max(0, lapc[0] + 1), "LapCompleted": lapc[0],
             "LapDistPct": mp, "LapDeltaToBestLap": 0.35 * math.sin(t / 9.0) + 0.12 * math.sin(t / 2.3),
             "LapDeltaToBestLap_OK": me["best"] > 0, "LapBestLapTime": me["best"],
             "LapLastLapTime": me["last"], "LapCurrentLapTime": cur, "Speed": speed,
             "Gear": 0 if speed < 1 else max(1, min(6, int(speed / 14) + 1)),
             "RPM": 3500 + (speed % 14) * 400, "FuelLevel": me["fuel"],
             "FuelLevelPct": me["fuel"] / 110.0, "FuelUsePerHour": 0.0 if speed < 1 else 3.1 * speed / self.L * 3600,
-            "PlayerCarMyIncidentCount": me["inc"], "DisplayUnits": 1, "IsReplayPlaying": False,
+            "PlayerCarMyIncidentCount": me["inc"], "DisplayUnits": 1,
+            "IsReplayPlaying": self.out, "ReplayFrameNumEnd": int(max(0.0, t - self.watch) * 60) if self.watch is not None else 1,
             "YawNorth": self._at(self.hd, mp) if not pit else self._at(self.hd, mp),
             "TrackTemp": track, "TrackTempCrew": track - 0.6, "AirTemp": air,
             "TrackWetness": wet, "Skies": 1 if rain < 0.05 else (2 if rain < 0.3 else 3),
