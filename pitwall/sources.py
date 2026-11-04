@@ -398,9 +398,11 @@ class MockSource:
                                 c["fuel"] = min(110.0, c["fuel"] + self.sv_fuel)
                             self.tyre, self.sv_flags = self.sv_tyre, self.sv_flags & 0x10
             if self.t > 30 and c["pit"] is None and self.mishap.random() < 0.0012 * dt:   # off track, sometimes stopped
-                c["off"], c["off_stop"] = self.t + self.mishap.uniform(1.5, 7.0), self.mishap.random() < 0.3
+                # most are a wide line, the 1x kind; some lose it; a few stop
+                c["off"] = self.t + self.mishap.uniform(1.5, 7.0)
+                c["off_v"] = self.mishap.choices((0.9, 0.3, 0.0), (6, 3, 1))[0]
             if self.t < c.get("off", 0):
-                v *= 0.0 if c["off_stop"] else 0.55
+                v *= c["off_v"]
             c["v"] = v
             nd = c["d"] + v * dt / self.L
             # lap bookkeeping

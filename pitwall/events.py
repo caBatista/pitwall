@@ -7,6 +7,11 @@ It always reads what iRacing is showing, live or replay, a saved one included: i
 telemetry is that moment of the race, so what plays gets detected like the rest. Seeing a stretch
 twice doesn't list it twice, and a jump in time takes new baselines, so it doesn't read as events.
 What happens live while the driver watches the past isn't seen, and only shows up if it gets played.
+
+Accidents: iRacing only tells me my own incident points, so those are exact (1x stays out of them).
+Anybody else's come from DriverInfo when the session gives them (as far as known, to admins); otherwise
+they are estimated: a car going far slower than its class does at that point of the track lost control
+or hit something, and a wide line doesn't slow anyone that much. Estimates carry est: True.
 """
 from __future__ import annotations
 
@@ -18,6 +23,12 @@ PASS_HOLD = 2.5       # a pass counts once it lasted this long: side by side the
 FIGHT_GAP = 5.5       # m between two cars of the same class on the same lap: alongside, a car length
 FIGHT_MIN = 1.0       # s alongside for it to be a fight
 FIGHT_END = 2.0       # s apart: it ended, and whoever is still ahead held the position
+ACC_BINS = 100        # points of the lap the class pace is kept for
+ACC_RATIO = 0.45      # this far under the pace of the class there, twice in a row: an accident
+ACC_FAST = 15.0       # m/s: a pace under this says nothing (hairpin, or no data yet)
+ACC_COOLDOWN = 15.0   # s, per car: it stays slow for a while
+ACC_NEAR = 15.0       # m: somebody this close at that moment: contact
+EXACT_WINDOW = 30.0   # s: the session info arrives late, the slowdown tells when it happened
 SAME_EVENT = 3.0      # s: same event, same cars, this close in time: seen twice
 SEEK = 5.0            # s skipped between two frames: a jump in the replay, not racing
 PASS_COOLDOWN = 6.0   # same two cars, again this soon: the same fight
@@ -42,6 +53,7 @@ class EventLog:
         self.ver = 0
         self._next = 0
         self._seen = {}   # what is listed, for a replay seen twice
+        self._f = None
         self._new_session(None, None)
 
     def _new_session(self, sid, snum):
@@ -53,6 +65,7 @@ class EventLog:
 
     def _baseline(self, f):
         self._base = True
+        self._f = f
         self._state, self._flags = f.state, f.flags
         self._inc = f.inc
         self._best = {i: f.best[i] for i in f.present if f.best[i] > 0}
@@ -62,6 +75,8 @@ class EventLog:
             self._cbest[c] = min(b, self._cbest.get(c, b))
         self._top = {i: (f.laps.get(i) or (None,))[0] for i in f.present}
         self._seq, self._pending, self._pair_t, self._fight = {}, {}, {}, {}
+        self._pace, self._acc_pos, self._acc_low, self._acc_t, self._slow_t = {}, {}, {}, {}, {}
+        self._counts = dict(f.counts)
         self._pit = {i: bool(f.pitr[i]) for i in f.present}
         self._pit_in, self._pit_out = {}, {}
         self._surf = {i: f.surf[i] for i in f.present}
@@ -70,8 +85,16 @@ class EventLog:
         self._cflag = {i: f.car_flag(f.cflags[i]) for i in f.present}
         self._fin = set(f.fin)
         self._t = f.t
+        self._acc_s = f.t
+
+    def lap_of(self, i):
+        """The lap this car is on."""
+        n = self._f.laps_done(i) if i is not None and self._f else -1
+        return n + 1 if n >= 0 else None
 
     def add(self, t, kind, **fields):
+        fields.setdefault("cl", self.lap_of(fields.get("i")))
+        fields.setdefault("cj", self.lap_of(fields.get("j")))
         key = (self.snum, kind, fields.get("i"), fields.get("j"), fields.get("v"))
         times = self._seen.setdefault(key, [])
         if any(abs(t - x) < SAME_EVENT for x in times):   # the same one, seen again in the replay
@@ -113,6 +136,7 @@ class EventLog:
         self.kind = f.kind
         if self._base and not -1 <= f.t - self._t <= SEEK:   # time jumped: a replay
             self._base = None
+        self._f = f
         my = f.laps_done(f.me)
         self._lap = my + 1 if my >= 0 else self._lap
         if not self._base:
@@ -124,8 +148,14 @@ class EventLog:
         for i in f.present:
             self._car(f, i)
         self._laps(f)
+        self._exact_incidents(f)
         if f.kind == "race" and f.state == 4:
             self._passes(f)
+            if f.t - self._acc_s >= 0.5:
+                self._accidents(f, f.t - self._acc_s)
+                self._acc_s = f.t
+        else:
+            self._acc_s = f.t
         if f.t - self._sample >= 1.0:
             self._sample = f.t
             self._stops(f)
@@ -178,11 +208,11 @@ class EventLog:
         if f.kind == "race":
             was_pit = self._pit.get(i, False)
             if p and not was_pit:
-                self._pit_in[i] = (f.t, self._lap)   # told when the stop ends, listed when it began
+                self._pit_in[i] = (f.t, self._lap, self.lap_of(i))   # told when the stop ends, listed when it began
             elif was_pit and not p:
                 began = self._pit_in.pop(i, None)
                 if s >= 0 and began:
-                    self.add(began[0], "pit", i=i, d=round(f.t - began[0], 1), lap=began[1])
+                    self.add(began[0], "pit", i=i, d=round(f.t - began[0], 1), lap=began[1], cl=began[2])
                     self._pit_out[i] = f.t
             if f.state == 4 and s < 0 <= self._surf.get(i, -1):
                 self.add(f.t, "out", i=i)
@@ -259,7 +289,7 @@ class EventLog:
         """Two cars side by side for a moment: an attack and a defence, even if nothing changed in the end."""
         for a, b in zip(cars, cars[1:]):
             if (f.tot[a] - f.tot[b]) * f.length <= FIGHT_GAP:
-                r = self._fight.setdefault((min(a, b), max(a, b)), {"t0": f.t, "front": a, "lap": self._lap})
+                r = self._fight.setdefault((min(a, b), max(a, b)), {"t0": f.t, "front": a, "lap": self._lap, "at": {a: self.lap_of(a), b: self.lap_of(b)}})
                 r["last"] = f.t
 
     def _fights_over(self, f):
@@ -272,7 +302,53 @@ class EventLog:
                 continue
             front = a if f.tot[a] > f.tot[b] else b
             if front == r["front"]:   # (if not, it was a pass, and that has its own event)
-                self.add(r["t0"], "fight", i=a if front == b else b, j=front, d=round(r["last"] - r["t0"], 1), lap=r["lap"])
+                back = a if front == b else b
+                self.add(r["t0"], "fight", i=back, j=front, d=round(r["last"] - r["t0"], 1), lap=r["lap"], cl=r["at"][back], cj=r["at"][front])
+
+    def _exact_incidents(self, f):
+        """Somebody else's points, if the session tells them."""
+        for i, n in f.counts.items():
+            was = self._counts.get(i, n)
+            self._counts[i] = n
+            if n - was >= 2 and i != f.me:
+                t = self._slow_t.get(i, 0)
+                self.add(t if f.t - t < EXACT_WINDOW else f.t, "acc", i=i, x=n - was, est=False)
+
+    def _accidents(self, f, dt):
+        """Estimate, for the others: far under the pace of the class at that point of the track."""
+        if f.flags & CAUTION or not f.length or f.counts_known:
+            self._acc_pos = {}
+            return
+        for i in f.present:
+            old, p = self._acc_pos.get(i), f.pct[i]
+            if not self._ok_for_pass(f, i) or i == f.me:
+                self._acc_pos.pop(i, None)
+                self._acc_low.pop(i, None)
+                continue
+            self._acc_pos[i] = p
+            if old is None:
+                continue
+            v = ((p - old) % 1.0) * f.length / dt
+            pace = self._pace.setdefault(f.cls[i], {})
+            b = int(p * ACC_BINS) % ACC_BINS
+            ref = pace.get(b)
+            slow = bool(ref and ref > ACC_FAST and v < ACC_RATIO * ref)
+            if not slow:
+                pace[b] = v if ref is None else ref + 0.2 * (v - ref)
+                self._acc_low.pop(i, None)
+                continue
+            first = self._acc_low.setdefault(i, f.t)
+            self._slow_t[i] = first
+            if first != f.t and f.t - self._acc_t.get(i, -1e9) > ACC_COOLDOWN:
+                self._acc_t[i] = f.t
+                near, gap = None, ACC_NEAR / f.length
+                for k in f.present:
+                    if k != i and f.surf[k] >= 0 and not f.pitr[k] and f.pct[k] >= 0:
+                        d = abs(f.pct[k] - p) % 1.0
+                        d = min(d, 1.0 - d)
+                        if d < gap:
+                            near, gap = k, d
+                self.add(first, "acc", i=i, j=near, x=4 if near is not None else 2, est=True)
 
     def _stops(self, f):
         racing = f.kind == "race" and f.state == 4 and self._green_t is not None and f.t - self._green_t > STOP_GRACE

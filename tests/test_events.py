@@ -290,3 +290,67 @@ def test_the_speed_never_comes_after_the_search():
     calls.clear()
     src.replay_live()
     assert calls == ["replay_set_play_speed", "replay_search"]
+
+
+def pace_lap(engine, t0, slow_from=None, near=None, cars=(0, 1, 2), step=.25):
+    """Tres carros em volta normal; o 1 cai para 20% do ritmo a partir de slow_from."""
+    pos = {1: 0.30}
+    t = t0
+    while t < t0 + 80:
+        pos[1] += (.002 if slow_from and t >= slow_from else .01) * step * 2
+        pos[2] = pos[1] + near if near else pos.get(2, .55) + .01 * step * 2
+        place = {0: (5, .05), 1: (5 + int(pos[1]), pos[1] % 1.0), 2: (2, pos[2] % 1.0)}
+        engine.update(racing(place, t))
+        t += step
+    return t
+
+
+def test_a_car_far_under_its_pace_is_an_accident(engine):
+    setup(engine)
+    run(engine, 0, 1, lambda t: racing({1: (5, .30)}, t, SessionState=3))
+    pace_lap(engine, 2)
+    assert not kinds(engine, "acc")
+    t = pace_lap(engine, 90, slow_from=120)
+    e = kinds(engine, "acc")
+    assert [x["i"] for x in e] == [1] and e[0]["est"] is True and e[0]["x"] == 2 and e[0]["j"] is None
+    assert 119 <= e[0]["t"] <= 122
+
+
+def test_someone_right_there_makes_it_a_contact(engine):
+    setup(engine)
+    run(engine, 0, 1, lambda t: racing({1: (5, .30)}, t, SessionState=3))
+    pace_lap(engine, 2, near=.001)
+    pace_lap(engine, 90, slow_from=120, near=.001)
+    e = kinds(engine, "acc")
+    assert e and e[0]["x"] == 4 and e[0]["j"] == 2
+
+
+def test_my_own_points_are_exact(engine):
+    setup(engine)
+    run(engine, 0, 4, lambda t: racing({0: (5, .5)}, t, PlayerCarMyIncidentCount=0 if t < 2 else 1))
+    run(engine, 4, 8, lambda t: racing({0: (5, .5)}, t, PlayerCarMyIncidentCount=1 if t < 6 else 5))
+    assert [(e["n"], e["total"]) for e in kinds(engine, "inc")] == [(1, 1), (4, 5)]
+    assert not kinds(engine, "acc")
+
+
+def test_points_of_the_others_are_used_when_the_session_gives_them(engine):
+    ds = [{"CarIdx": 0}, {"CarIdx": 1, "CurDriverIncidentCount": 1}]
+    engine.set_session(session(ds))
+    run(engine, 0, 3, lambda t: racing({0: (5, .5), 1: (5, .2)}, t))
+    engine.set_session(session([{"CarIdx": 0}, {"CarIdx": 1, "CurDriverIncidentCount": 2}]))
+    run(engine, 3, 5, lambda t: racing({0: (5, .5), 1: (5, .2)}, t))
+    assert not kinds(engine, "acc")   # +1x: fica de fora
+    engine.set_session(session([{"CarIdx": 0}, {"CarIdx": 1, "CurDriverIncidentCount": 6}]))
+    run(engine, 5, 7, lambda t: racing({0: (5, .5), 1: (5, .2)}, t))
+    e = kinds(engine, "acc")
+    assert [(x["i"], x["x"], x["est"]) for x in e] == [(1, 4, False)]
+
+
+def test_each_car_keeps_its_own_lap(engine):
+    setup(engine)
+    run(engine, 0, 20, lambda t: racing({0: (7, .50), 1: (7, .49 if t < 10 else .51)}, t))
+    e = kinds(engine, "pass")[0]
+    assert (e["cl"], e["cj"]) == (8, 8)
+    setup(engine)
+    run(engine, 21, 25, lambda t: racing({0: (9, .5), 1: (3, .2 + (.1 if t >= 23 else 0))}, t, PlayerCarMyIncidentCount=0 if t < 23 else 4))
+    assert kinds(engine, "inc")[0]["cl"] == 10

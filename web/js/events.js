@@ -3,22 +3,22 @@ import { esc, lapTime, prefs, savePrefs } from './util.js';
 /**
  * Race Events: for when the driver is out of the car. Two views:
  * Events: the session of the reference driver, whoever that is at the moment.
- * Accidents: everybody's incidents as the telemetry shows them (off track, stopped, left the track, my
- * own incident points) and the cautions. iRacing gives nobody else's incident points.
+ * Accidents: the ones that count, loss of control and contact (2x, 4x), and the cautions. Mine are exact;
+ * anybody else's are estimates, marked with ~, unless the session tells the points (see events.py).
  * A click on a row takes the sim's replay there, some seconds before, with the camera on the car.
  * Newest at the bottom, under a heading per lap. Nothing runs while the card is hidden.
  */
 const GROUPS = { pass: 'Battles', inc: 'Incidents', pit: 'Pits', lap: 'Laps', flag: 'Flags' };
 const GROUP_OF = {
-  pass: 'pass', fight: 'pass', inc: 'inc', off: 'inc', stop: 'inc', out: 'inc', pit: 'pit', fast: 'lap', pb: 'lap', q: 'lap', inv: 'lap',
+  pass: 'pass', fight: 'pass', inc: 'inc', acc: 'inc', off: 'inc', stop: 'inc', out: 'inc', pit: 'pit', fast: 'lap', pb: 'lap', q: 'lap', inv: 'lap',
   pen: 'flag', finish: 'flag',
 };
 const TABS = { practice: 'Practice', qualify: 'Qualify', race: 'Race', test: 'Test' };
 const TAG = {
-  pass: 'Pass', inc: 'Inc', off: 'Off', stop: 'Stop', out: 'Out', pit: 'Pit', fast: 'Fast', pb: 'PB', q: 'Lap', inv: 'Inv', pen: 'Flag', finish: 'Finish',
+  pass: 'Pass', fight: 'Fight', inc: 'Inc', acc: 'Acc', off: 'Off', stop: 'Stop', out: 'Out', pit: 'Pit', fast: 'Fast', pb: 'PB', q: 'Lap', inv: 'Inv', pen: 'Flag', finish: 'Finish',
   caution: 'Caution', clear: 'Clear', red: 'Red',
 };
-const ACCIDENT = new Set(['inc', 'off', 'stop', 'out', 'caution', 'clear', 'red']);
+const isAccident = (e) => e.k === 'acc' || (e.k === 'inc' && e.n >= 2) || e.k === 'caution' || e.k === 'clear' || e.k === 'red';
 const PEN = { dq: 'disqualified', black: 'black flag', repair: 'meatball flag', warn: 'slow down' };
 const MAX_ROWS = 300;   // the latest ones: nobody scrolls through more, and it keeps the page light
 
@@ -30,7 +30,8 @@ function line(S, e, ref) {
   switch (e.k) {
     case 'pass': return `${who(e.i)} passes ${who(e.j)}${e.p === 1 ? ' for the lead' : e.p ? ` for P${e.p}` : ''}`;
     case 'fight': return e.j === ref ? `${who(e.j)} defends from ${who(e.i)} <i>${e.d}s</i>` : `${who(e.i)} attacks ${who(e.j)} <i>${e.d}s</i>`;
-    case 'inc': return `${who(e.i)} +${e.n}x incident${e.j != null ? `, near ${who(e.j)}` : ''} <i>${e.total}x</i>`;
+    case 'inc': return `${who(e.i)} ${e.n >= 4 ? 'car contact' : e.n >= 2 ? 'lost control or contact' : 'off track'}${e.n >= 2 && e.j != null ? ` with ${who(e.j)}` : ''} <i>${e.n}x</i>`;
+    case 'acc': return `${who(e.i)} ${e.j != null ? `contact with ${who(e.j)}` : 'lost control'} <i>${e.est ? '~' : ''}${e.x}x</i>`;
     case 'off': return `${who(e.i)} off track`;
     case 'stop': return `${who(e.i)} stopped on track`;
     case 'out': return `${who(e.i)} left the track`;
@@ -89,18 +90,20 @@ export const events = {
 
   list(S, ref) {
     const pick = this.view === 'accidents'
-      ? (e) => ACCIDENT.has(e.k)
+      ? isAccident
       : (e) => (e.i === ref || e.j === ref) && !prefs.evOff.includes(GROUP_OF[e.k]);
     return S.events.filter((e) => e.sn === this.shown && pick(e)).sort((a, b) => a.t - b.t || a.id - b.id).slice(-MAX_ROWS);
   },
 
   rows(S, ref) {
     let html = '', lap = null;
+    const acc = this.view === 'accidents';
     for (const e of this.list(S, ref)) {
-      if (e.lap > (lap ?? 0)) { lap = e.lap; html += `<div class="ev-lap">Lap ${lap}</div>`; }
+      const mine = e.i === ref ? e.cl : e.j === ref ? e.cj : null;   // the lap of the reference driver, not mine
+      if (!acc && mine > (lap ?? 0)) { lap = mine; html += `<div class="ev-lap">Lap ${lap}</div>`; }
       const color = S.classMap.get(S.drivers[e.i]?.cls)?.color;
       html += `<button id="ev${e.id}" class="ev ${tone(e, ref)} g-${GROUP_OF[e.k] || 'flag'} k-${e.k}${`ev${e.id}` === this.on ? ' on' : ''}" data-id="${e.id}"${color ? ` style="--cc:${color}"` : ''}>
-        <em>${TAG[e.k] || ''}</em><span>${line(S, e, ref)}</span><time>${clock(e.t)}</time></button>`;
+        <em>${TAG[e.k] || ''}</em><span>${line(S, e, ref)}</span><time title="${clock(e.t)}">${e.cl ? `L${acc ? e.cl : mine ?? e.cl}` : clock(e.t)}</time></button>`;
     }
     return html;
   },
