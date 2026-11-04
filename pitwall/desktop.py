@@ -114,6 +114,7 @@ def main():
     p.add_argument("--mock", action="store_true", help="run on the simulator (no iRacing needed)")
     p.add_argument("--speed", type=float, default=4.0, help=argparse.SUPPRESS)
     p.add_argument("--windowed", action="store_true", help="start in a window (default: full screen)")
+    p.add_argument("--render-hz", type=float, help="redraw the panels at most this many times a second (default: every update)")
     args = p.parse_args()
 
     source = MockSource(speed=args.speed) if args.mock else IRacingSource()
@@ -131,7 +132,7 @@ def main():
         state["screen"] = [screen.x, screen.y, screen.width, screen.height]
     api = Api(state)
     api._window = webview.create_window(
-        f"Pitwall {__version__}", f"http://127.0.0.1:{port}/", js_api=api, screen=screen,
+        f"Pitwall {__version__}", f"http://127.0.0.1:{port}/" + (f"?hz={args.render_hz:g}" if args.render_hz else ""), js_api=api, screen=screen,
         width=1600, height=900, min_size=(960, 600), background_color="#111112",
         fullscreen=state.get("fullscreen", True), text_select=False,
     )

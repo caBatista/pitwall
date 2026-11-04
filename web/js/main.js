@@ -131,8 +131,9 @@ function connect() {
   ws.onopen = () => { S.wsUp = true; status(); };
   ws.onclose = () => { S.wsUp = false; S.connected = false; S.raw = ''; status(); setTimeout(connect, 1000); };
   ws.onmessage = (e) => {
-    // sim paused / nothing new: the 20 Hz stream repeats itself, unless an effect has to keep running
-    if (e.data === S.raw && !fx.live) return;
+    // sim paused / nothing new: the 20 Hz stream repeats itself. Skip it, unless an effect has to keep
+    // running or the slow widgets haven't shown this frame yet
+    if (e.data === S.raw && !fx.live && settled) return;
     const m = JSON.parse(e.data);
     switch (m.type) {
       case 'hello': S.source = m.source; break;
@@ -163,14 +164,23 @@ connect();
 let slow = 0;
 const fast = [standings, relative, trackmap].filter((w) => on.has(w));
 const slowW = [fuel, weather, laplog].filter((w) => on.has(w));
+// ?hz=10 (desktop: --render-hz 10) caps the panels below the 20 updates/s that arrive; default: no cap
+const minGap = 1000 / (Number(params.get('hz')) || Infinity);
+let drawn = 0, later = 0, settled = false;
 function frame(now) {
   queued = false;
   if (!dirty || !S.st) return;
+  if (now - drawn < minGap - 8) {   // 8: a frame that comes a bit early still counts
+    later ||= setTimeout(() => { later = 0; invalidate(); }, minGap - (now - drawn));
+    return;
+  }
+  drawn = now;
   dirty = false;
   fx.live = false;
   try {
     for (const w of fast) w.update(S);
-    if (now - slow > 400) { slow = now; header(); status(); for (const w of slowW) w.update(S); }
+    settled = now - slow > 400;
+    if (settled) { slow = now; header(); status(); for (const w of slowW) w.update(S); }
   } catch (err) { console.error(err); }
 }
 setInterval(status, 1000);
