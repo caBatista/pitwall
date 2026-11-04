@@ -1,4 +1,4 @@
-from pitwall.simwindow import Watch
+from pitwall.simwindow import HOLD, KEYUP, Watch, press_alt_enter
 
 OTHER, SIM = 1, 2
 
@@ -52,3 +52,10 @@ def test_alt_tabbing_past_it_does_nothing():
     w.wait = lambda _: s.update(front=OTHER)
     w.step()
     assert s["presses"] == 0
+
+
+def test_the_keys_go_one_at_a_time():
+    """Tudo de uma vez o iRacing nao ve; com intervalo entre as teclas, sim."""
+    log = []
+    press_alt_enter(lambda k: log.append((k.vk, bool(k.flags & KEYUP))), lambda s: log.append(s))
+    assert log == [(0x12, False), HOLD, (0x0D, False), HOLD, (0x0D, True), HOLD, (0x12, True), HOLD]

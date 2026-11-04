@@ -14,6 +14,7 @@ from .chat import INPUT_KEYBOARD, KEYUP, _api, _exe, _Input, _Key, _Union
 
 POLL = 0.5     # s between looks at the window in front
 SETTLE = 0.4   # s it has to stay in front: alt-tabbing past it isn't focusing on it
+HOLD = 0.06    # s between key events: sent all at once the sim doesn't see them (tested in iRacing)
 GWL_STYLE, WS_CAPTION = -16, 0x00C00000
 MONITOR_DEFAULTTONEAREST = 2
 ALT, ENTER = (0x12, 0x38), (0x0D, 0x1C)   # virtual key, scan code: the sim may read either
@@ -49,12 +50,18 @@ def is_windowed(hwnd) -> bool:
     return (client.right, client.bottom) != (m.right - m.left, m.bottom - m.top)
 
 
-def press_alt_enter():
+def _send(key):
     u, _ = _api()
+    event = _Input(type=INPUT_KEYBOARD, u=_Union(ki=key))
+    u.SendInput(1, ctypes.byref(event), ctypes.sizeof(_Input))
+
+
+def press_alt_enter(send=_send, wait=time.sleep):
     down = [_Key(vk=vk, scan=scan) for vk, scan in (ALT, ENTER)]
     up = [_Key(vk=vk, scan=scan, flags=KEYUP) for vk, scan in (ENTER, ALT)]
-    keys = [_Input(type=INPUT_KEYBOARD, u=_Union(ki=key)) for key in down + up]
-    u.SendInput(len(keys), (_Input * len(keys))(*keys), ctypes.sizeof(_Input))
+    for key in down + up:
+        send(key)
+        wait(HOLD)
 
 
 class Watch:
