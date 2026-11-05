@@ -223,6 +223,26 @@ def test_relative_is_iracings_estimate_not_the_elapsed_time(engine):
     assert st["rel"][0]["dt"] == pytest.approx(4.0)
 
 
+def test_class_name_when_the_session_gives_none(engine):
+    cars = [{"CarIdx": 0, "CarClassID": 4029, "CarClassShortName": None, "CarScreenName": "Acura ARX-06"},
+            {"CarIdx": 1, "CarClassID": 4011, "CarClassShortName": None, "CarScreenName": "Acura NSX GT3 EVO 22"},
+            {"CarIdx": 2, "CarClassID": 77, "CarClassShortName": None, "CarScreenName": "Dallara P217 LMP2"},
+            {"CarIdx": 3, "CarClassID": 78, "CarClassShortName": None, "CarScreenName": "Mazda MX-5"},
+            {"CarIdx": 4, "CarClassID": 79, "CarClassShortName": "GT3 Class", "CarScreenName": "BMW M4 GT3"}]
+    engine.set_session(session(cars))
+    names = {c["id"]: c["name"] for c in engine.classes.values()}
+    assert names == {4029: "GTP", 4011: "GT3", 77: "LMP2", 78: "Mazda MX-5", 79: "GT3 Class"}
+
+
+def test_relative_rescales_each_car_inside_a_class(engine):
+    """Spa: BMW 134,10 e Porsche 133,46, mesma classe. Sem isso, 0,6 s a mais no fim da volta."""
+    engine.set_session(session([{"CarIdx": 0, "CarClassEstLapTime": 133.46}, {"CarIdx": 1, "CarClassEstLapTime": 134.10}]))
+    est = [0.0] * 64
+    est[0], est[1] = 127.0, 129.3
+    st = engine.update(frame(place={0: (2, .950), 1: (2, .965)}, SessionState=4, SessionTime=200.0, CarIdxEstTime=est))
+    assert st["rel"][0]["dt"] == pytest.approx(129.3 - 127.0 * 134.10 / 133.46, abs=.01)
+
+
 def test_relative_ahead_and_behind(engine):
     engine.set_session(session([0, 1, 2], "Race"))
     st = engine.update(frame(place={0: (2, 0.50), 1: (2, 0.52), 2: (2, 0.48)}, SessionState=4, SessionTime=200.0))

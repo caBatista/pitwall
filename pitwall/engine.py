@@ -137,6 +137,16 @@ def flag_name(bits: int) -> str:
     return "none"
 
 
+# Sessions with AI cars come with no class name (seen at Daytona, IMSA grid, 2026-11-05)
+CLASS_NAMES = {4029: "GTP", 2523: "LMP2", 4011: "GT3"}
+CLASS_IN_CAR = re.compile(r"(GTP|GT[34]|LMP[0-9])")
+
+
+def class_name(cid, car):
+    m = CLASS_IN_CAR.search(car or "")
+    return CLASS_NAMES.get(cid) or (m.group(1) if m else None)
+
+
 # Seconds a stop costs at the least. Too low only means one lap more of fuel, too high a car that stops
 # short of the line
 PIT_LOSS = 25.0
@@ -356,7 +366,7 @@ class Engine:
             idx = int(d["CarIdx"])
             cid = int(d.get("CarClassID") or 0)
             car = d.get("CarScreenNameShort") or d.get("CarScreenName") or ""
-            cname = d.get("CarClassShortName") or car or f"Class {cid}"
+            cname = d.get("CarClassShortName") or class_name(cid, d.get("CarScreenName")) or car or f"Class {cid}"
             col = hexcolor(d.get("CarClassColor"))
             est = float(d.get("CarClassEstLapTime") or est_default)
             classes.setdefault(cid, {"id": cid, "name": cname, "color": col, "est": est, "n": 0})
@@ -367,7 +377,7 @@ class Engine:
                 # solo sessions report the user name as the team: not a team
                 "i": idx, "name": name, "user": (d.get("UserName") or "").strip(), "team": "" if d.get("TeamName") == d.get("UserName") else d.get("TeamName") or "",
                 "make": car_make(d.get("CarPath")), "country": d.get("FlairName") or "",
-                "num": str(d.get("CarNumber") or ""), "cls": cid, "car": car,
+                "num": str(d.get("CarNumber") or ""), "cls": cid, "car": car, "est": est,
                 "ir": d.get("IRating") or 0, "lic": d.get("LicString") or "",
                 "licColor": hexcolor(d.get("LicColor"), "#8b95a7"), "ai": bool(d.get("CarIsAI")),
             }
@@ -667,11 +677,11 @@ class Engine:
             ref = (self.classes.get(my_cls) or {}).get("est") or 100.0
 
         def lap_of(i):
-            return (self.classes.get(self.drivers[i]["cls"]) or {}).get("est") or ref
+            return self.drivers[i]["est"] or ref   # each car its own: inside a class they differ (BMW 134.1, Porsche 133.5 at Spa)
 
         def est_gap(a, b):
             """Fallback before the PassLog has data: seconds since car a (ahead) was where car b is.
-            CarIdxEstTime follows the track's speed profile; b's value is rescaled to a's class."""
+            CarIdxEstTime follows the track's speed profile and each car's own lap; b's is rescaled to a's."""
             la = lap_of(a)
             linear = ((pct[a] - pct[b]) % 1.0) * la
             if est is None:
