@@ -139,7 +139,7 @@ def flag_name(bits: int) -> str:
 
 # Sessions with AI cars come with no class name (seen at Daytona, IMSA grid, 2026-11-05)
 CLASS_NAMES = {4029: "GTP", 2523: "LMP2", 4011: "GT3"}
-CLASS_IN_CAR = re.compile(r"(GTP|GT[34]|LMP[0-9])")
+CLASS_IN_CAR = re.compile(r"(?<![A-Z0-9])(GTP|GT[34]|LMP[0-9])(?![A-Z0-9])")
 
 
 def class_name(cid, car):
