@@ -294,88 +294,11 @@ def test_the_speed_never_comes_after_the_search():
     assert calls == ["replay_set_play_speed", "replay_search"]
 
 
-def pace_lap(engine, t0, slow_from=None, near=None, cars=(0, 1, 2), step=.25, replay=False):
-    """Tres carros em volta normal; o 1 cai para 20% do ritmo a partir de slow_from."""
-    pos = {1: 0.30}
-    t = t0
-    while t < t0 + 80:
-        pos[1] += (.002 if slow_from and t >= slow_from else .01) * step * 2
-        pos[2] = pos[1] + near if near else pos.get(2, .55) + .01 * step * 2
-        place = {0: (5, .05), 1: (5 + int(pos[1]), pos[1] % 1.0), 2: (2, pos[2] % 1.0)}
-        engine.update(racing(place, t, **(dict(IsReplayPlaying=True, ReplaySessionTime=t, ReplaySessionNum=0, ReplayFrameNumEnd=60000) if replay else {})))
-        t += step
-    return t
-
-
-def test_a_car_far_under_its_pace_is_an_accident(engine):
-    setup(engine)
-    run(engine, 0, 1, lambda t: racing({1: (5, .30)}, t, SessionState=3))
-    pace_lap(engine, 2)
-    assert not kinds(engine, "acc")
-    t = pace_lap(engine, 90, slow_from=120)
-    e = kinds(engine, "acc")
-    assert [x["i"] for x in e] == [1] and e[0]["est"] is True and e[0]["x"] == 2 and e[0]["j"] is None
-    assert 119 <= e[0]["t"] <= 122
-
-
-def test_someone_right_there_makes_it_a_contact(engine):
-    setup(engine)
-    run(engine, 0, 1, lambda t: racing({1: (5, .30)}, t, SessionState=3))
-    pace_lap(engine, 2, near=.001)
-    pace_lap(engine, 90, slow_from=120, near=.001)
-    e = kinds(engine, "acc")
-    assert e and e[0]["x"] == 4 and e[0]["j"] == 2
-
-
 def test_my_own_points_are_exact(engine):
     setup(engine)
     run(engine, 0, 4, lambda t: racing({0: (5, .5)}, t, PlayerCarMyIncidentCount=0 if t < 2 else 1))
     run(engine, 4, 8, lambda t: racing({0: (5, .5)}, t, PlayerCarMyIncidentCount=1 if t < 6 else 5))
     assert [(e["n"], e["total"]) for e in kinds(engine, "inc")] == [(1, 1), (4, 5)]
-    assert not kinds(engine, "acc")
-
-
-def results(**points):
-    return [{"CarIdx": int(k[1:]), "Incidents": v} for k, v in points.items()]
-
-
-def test_points_of_the_others_come_from_the_results(engine):
-    engine.set_session(session(results=results(c0=0, c1=1)))
-    run(engine, 0, 3, lambda t: racing({0: (5, .5), 1: (5, .2)}, t))
-    engine.set_session(session(results=results(c0=0, c1=2)))
-    run(engine, 3, 5, lambda t: racing({0: (5, .5), 1: (5, .2)}, t))
-    assert not kinds(engine, "acc")   # +1x: fica de fora
-    engine.set_session(session(results=results(c0=0, c1=6)))
-    run(engine, 5, 7, lambda t: racing({0: (5, .5), 1: (5, .2)}, t))
-    e = kinds(engine, "acc")
-    assert [(x["i"], x["x"], x["est"]) for x in e] == [(1, 4, False)]
-
-
-def test_what_was_there_before_opening_is_not_news(engine):
-    engine.set_session(session(results=results(c0=0, c1=9)))
-    run(engine, 0, 3, lambda t: racing({0: (5, .5), 1: (5, .2)}, t))
-    assert not kinds(engine, "acc")
-
-
-def test_the_slowdown_says_when_it_happened(engine):
-    engine.set_session(session(results=results(c0=0, c1=0, c2=0)))
-    run(engine, 0, 1, lambda t: racing({1: (5, .30)}, t, SessionState=3))
-    pace_lap(engine, 2)
-    pace_lap(engine, 90, slow_from=120)
-    assert not kinds(engine, "acc")   # com resultados, a lentidao sozinha nao vira evento
-    engine.set_session(session(results=results(c0=0, c1=4, c2=0)))
-    engine.update(racing({1: (9, .1)}, 171))
-    e = kinds(engine, "acc")
-    assert [(x["x"], x["est"]) for x in e] == [(4, False)] and 119 <= e[0]["t"] <= 122   # o momento, nao a chegada
-
-
-def test_no_results_yet_it_is_an_estimate(engine):
-    """-1 em CurDriverIncidentCount, como vem dos outros em sessao oficial, nao quer dizer nada."""
-    engine.set_session(session([{"CarIdx": 0}, {"CarIdx": 1, "CurDriverIncidentCount": -1}, {"CarIdx": 2, "CurDriverIncidentCount": -1}]))
-    run(engine, 0, 1, lambda t: racing({1: (5, .30)}, t, SessionState=3))
-    pace_lap(engine, 2)
-    pace_lap(engine, 90, slow_from=120)
-    assert kinds(engine, "acc")[0]["est"] is True
 
 
 def test_each_car_keeps_its_own_lap(engine):
@@ -450,13 +373,3 @@ def test_a_finished_race_in_the_replay_is_the_result(engine):
 def test_a_race_still_running_in_the_replay_stays_live(engine):
     engine.set_session(session(results=[{"CarIdx": 0, "Position": 1}, {"CarIdx": 1, "Position": 2}]))
     assert not engine.update(replay_of(100))["session"]["static"]
-
-
-def test_the_past_in_the_replay_gives_estimates(engine):
-    """Vendo o passado os resultados ja sao os finais: nao crescem, entao vale a lentidao."""
-    engine.set_session(session(results=results(c0=0, c1=0, c2=0)))
-    run(engine, 0, 1, lambda t: racing({1: (5, .30)}, t, SessionState=3))
-    pace_lap(engine, 2)
-    pace_lap(engine, 90, slow_from=120, replay=True)
-    e = kinds(engine, "acc")
-    assert e and e[0]["est"] is True

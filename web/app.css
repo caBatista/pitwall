@@ -437,9 +437,9 @@ svg.tyre.wet { color: var(--blue); }
 .wx-temp em { font-style: normal; color: var(--dim); font-size: 12px; }
 .trend { font: 700 11px var(--mono); }
 .trend.up { color: var(--accent); } .trend.down { color: var(--dim); }
-.wet { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-top: 6px; }
-.wet i { height: 8px; border-radius: 3px; background: var(--line); }
-.wet i.on { background: var(--txt); } .wet i.on.dry { background: var(--accent); }
+.wet-bar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-top: 6px; }
+.wet-bar i { height: 8px; border-radius: 3px; background: var(--line); }
+.wet-bar i.on { background: var(--txt); } .wet-bar i.on.dry { background: var(--accent); }
 .compass { position: relative; width: 64px; height: 64px; border-radius: 50%; border: 1px solid var(--line-2); background: radial-gradient(circle, var(--bg-2), transparent 70%); }
 .compass svg { position: absolute; inset: 0; }
 

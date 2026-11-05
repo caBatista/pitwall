@@ -8,11 +8,9 @@ telemetry is that moment of the race, so what plays gets detected like the rest.
 twice doesn't list it twice, and a jump in time takes new baselines, so it doesn't read as events.
 What happens live while the driver watches the past isn't seen, and only shows up if it gets played.
 
-Accidents: 1x stays out of them. Mine are exact and instant. Everyone else's points are in the session
-results (ResultsPositions[].Incidents, seen in an official session), which come when iRacing updates the
-session info, so late: the moment comes from the slowdown that went before them, a car far under the
-pace of its class at that point of the track. With no results yet (first lap of a race) the slowdown
-alone is the accident, estimated: est True, 4x with someone right there, 2x otherwise.
+Incidents: only mine, from my own points, exact and instant. Nobody else's points say when: iRacing only
+fills ResultsPositions[].Incidents as each car ends the session, the whole total at once (seen in an
+official race, 2026-11-05). Guessing from a car slowing down gave 205 false accidents in a 15 min race.
 """
 from __future__ import annotations
 
@@ -26,12 +24,6 @@ PASS_HOLD = 8.0       # s with no more swaps between two cars: then the battle i
 FIGHT_GAP = 5.5       # m between two cars of the same class on the same lap: alongside, a car length
 FIGHT_MIN = 1.0       # s alongside for it to be a fight
 FIGHT_END = 2.0       # s apart: it ended, and whoever is still ahead held the position
-ACC_BINS = 100        # points of the lap the class pace is kept for
-ACC_RATIO = 0.45      # this far under the pace of the class there, twice in a row: an accident
-ACC_FAST = 15.0       # m/s: a pace under this says nothing (hairpin, or no data yet)
-ACC_COOLDOWN = 15.0   # s, per car: it stays slow for a while
-ACC_NEAR = 15.0       # m: somebody this close at that moment: contact
-EXACT_WINDOW = 180.0  # s: the results arrive late; a slowdown this recent is when it happened
 SAME_EVENT = 3.0      # s: same event, same cars, this close in time: seen twice
 SEEK = 5.0            # s skipped between two frames: a jump in the replay, not racing
 PIT_GRACE = 8.0       # just out of the pits: rejoining in front of someone is not a pass
@@ -77,8 +69,6 @@ class EventLog:
             c = f.cls[i]
             self._cbest[c] = min(b, self._cbest.get(c, b))
         self._seq, self._battle, self._fight = {}, {}, {}
-        self._pace, self._acc_pos, self._acc_low, self._acc_t, self._slow = {}, {}, {}, {}, {}
-        self._counts = dict(f.counts)   # what is already there isn't news
         self._pit = {i: bool(f.pitr[i]) for i in f.present}
         self._pit_in, self._pit_out = {}, {}
         self._surf = {i: f.surf[i] for i in f.present}
@@ -87,7 +77,6 @@ class EventLog:
         self._cflag = {i: f.car_flag(f.cflags[i]) for i in f.present}
         self._fin = set(f.fin)
         self._t = f.t
-        self._acc_s = f.t
 
     def lap_of(self, i):
         """The lap this car is on."""
@@ -174,14 +163,8 @@ class EventLog:
         for i in f.present:
             self._car(f, i)
         self._laps(f)
-        self._exact_incidents(f)
         if f.kind == "race" and f.state == 4:
             self._passes(f)
-            if f.t - self._acc_s >= 0.5:
-                self._accidents(f, f.t - self._acc_s)
-                self._acc_s = f.t
-        else:
-            self._acc_s = f.t
         if f.t - self._sample >= 1.0:
             self._sample = f.t
             self._stops(f)
@@ -325,53 +308,6 @@ class EventLog:
             if front == r["front"]:   # (if not, it was a pass, and that has its own event)
                 back = a if front == b else b
                 self.add(r["t0"], "fight", i=back, j=front, d=round(r["last"] - r["t0"], 1), lap=r["lap"], cl=r["at"][back], cj=r["at"][front])
-
-    def _exact_incidents(self, f):
-        """Everyone else's points, from the session results."""
-        for i, n in f.counts.items():
-            was = self._counts.get(i, 0)
-            self._counts[i] = n
-            if n - was >= 2 and i != f.me:
-                s = self._slow.pop(i, None)
-                t, near, lap = s if s and f.t - s[0] < EXACT_WINDOW else (f.t, None, self.lap_of(i))
-                self.add(t, "acc", i=i, j=near, x=n - was, est=False, cl=lap)
-
-    def _accidents(self, f, dt):
-        """A car far under the pace of the class at that point of the track: when, and who was there."""
-        if f.flags & CAUTION or not f.length:
-            self._acc_pos = {}
-            return
-        for i in f.present:
-            old, p = self._acc_pos.get(i), f.pct[i]
-            if not self._ok_for_pass(f, i) or i == f.me:
-                self._acc_pos.pop(i, None)
-                self._acc_low.pop(i, None)
-                continue
-            self._acc_pos[i] = p
-            if old is None:
-                continue
-            v = ((p - old) % 1.0) * f.length / dt
-            pace = self._pace.setdefault(f.cls[i], {})
-            b = int(p * ACC_BINS) % ACC_BINS
-            ref = pace.get(b)
-            slow = bool(ref and ref > ACC_FAST and v < ACC_RATIO * ref)
-            if not slow:
-                pace[b] = v if ref is None else ref + 0.2 * (v - ref)
-                self._acc_low.pop(i, None)
-                continue
-            first = self._acc_low.setdefault(i, f.t)
-            if first != f.t and f.t - self._acc_t.get(i, -1e9) > ACC_COOLDOWN:
-                self._acc_t[i] = f.t
-                near, gap = None, ACC_NEAR / f.length
-                for k in f.present:
-                    if k != i and f.surf[k] >= 0 and not f.pitr[k] and f.pct[k] >= 0:
-                        d = abs(f.pct[k] - p) % 1.0
-                        d = min(d, 1.0 - d)
-                        if d < gap:
-                            near, gap = k, d
-                self._slow[i] = (first, near, self.lap_of(i))
-                if not f.counts_known:
-                    self.add(first, "acc", i=i, j=near, x=4 if near is not None else 2, est=True)
 
     def _stops(self, f):
         racing = f.kind == "race" and f.state == 4 and self._green_t is not None and f.t - self._green_t > STOP_GRACE

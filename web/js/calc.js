@@ -3,8 +3,11 @@
  * How to reach the flag with reserve laps of fuel left. Enough already: {stops: 0, toGo, spare}.
  * Otherwise how many stops and the laps of the next one. A stop on lap N means entering the pits at the
  * end of lap N: last is the last lap the fuel in the tank completes, first the earliest from which full
- * tanks at every stop still get there, never before the next lap. add: what goes in on first.
+ * tanks at every stop still get there; this lap counts until the pit entry is behind me. add: what
+ * goes in on first.
  * laps: to go from here; lap: the lap I am on; pct: how far into it. */
+const PIT_ENTRY = 0.95;   // the telemetry doesn't say where it is: the stop is at the very end of the lap
+
 export function pitPlan(level, avg, laps, reserve, tank, lap, pct = 0) {
   if (!avg || level == null || laps == null) return null;
   const toGo = laps * avg, spare = level - toGo;
@@ -17,7 +20,7 @@ export function pitPlan(level, avg, laps, reserve, tank, lap, pct = 0) {
     wait = Math.max(0, Math.ceil(laps + reserve - stops * tank / avg + pct - 1 - 1e-9));
     if (wait <= reach) break;
   }
-  wait = Math.max(wait, Math.min(1, reach));
+  if (pct > PIT_ENTRY) wait = Math.max(wait, Math.min(1, reach));
   const atStop = level - (wait + 1 - pct) * avg;   // what is left when pitting on first
   const add = tank ? Math.min(missing, tank - Math.max(0, atStop)) : missing;
   return { stops, add, first: lap + wait, last: lap + reach };

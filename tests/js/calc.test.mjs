@@ -37,9 +37,19 @@ test('stopping on first still gets there with a full tank, one lap earlier does 
   assert.ok((p.last - lap + 2 - pct) * avg > level);
 });
 
-test('never before the next lap, unless it is the only one', () => {
-  assert.equal(pitPlan(20, 2, 11, 0, 100, 5, 0).first, 6);
-  assert.equal(pitPlan(1, 2, 11, 0, 100, 5, 0.5).first, 5);
+test('the stop is at the end of the lap: this lap counts until the pit entry is behind', () => {
+  assert.equal(pitPlan(20, 2, 11, 0, 100, 5, 0).first, 5);
+  assert.equal(pitPlan(20, 2, 11, 0, 100, 5, 0.9).first, 5);
+  assert.equal(pitPlan(20, 2, 11, 0, 100, 5, 0.97).first, 6);
+  assert.equal(pitPlan(1, 2, 11, 0, 100, 5, 0.97).first, 5);   // past it, but no fuel for another lap
+});
+
+test('Spa, 40 min: 18 laps, 50 L tank, 3.95 L/lap, 0.2 lap reserve', () => {
+  const plan = (level, lap, done) => pitPlan(level, 3.95, 18 - done, 0.2, 50, lap, 0);
+  assert.equal(plan(41.2, 3, 2).first, 6);    // stopping at the end of 5 leaves 13 laps: 52 L
+  assert.equal(plan(41.2, 3, 2).last, 12);
+  assert.equal(plan(29.35, 6, 5).first, 6);   // on lap 6 the end of lap 6 is still good
+  assert.equal(plan(5.66, 12, 11).last, 12);
 });
 
 test('a long race needs more stops', () => {

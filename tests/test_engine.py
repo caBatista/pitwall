@@ -197,6 +197,32 @@ def test_gap_in_seconds_uses_distance_when_no_passlog(engine):
     assert c1["ld"] == 0 and c1["gl"] == pytest.approx(2.0)   # 0,02 volta x 100 s
 
 
+def test_the_gap_is_iracings_own(engine):
+    engine.set_session(session([0, 1, 2], "Race"))
+    f2 = [0.0] * 64
+    f2[1], f2[2] = 3.25, 7.5
+    st = engine.update(frame(place={0: (2, 0.60), 1: (2, 0.50), 2: (2, 0.40)}, SessionState=4, SessionTime=200.0, CarIdxF2Time=f2))
+    assert car(st, 1)["gl"] == pytest.approx(3.25) and car(st, 2)["gl"] == pytest.approx(7.5)
+    assert car(st, 2)["gi"] == pytest.approx(4.25)
+
+
+def test_no_gap_from_iracing_yet_uses_ours(engine):
+    engine.set_session(session([0, 1], "Race"))
+    st = engine.update(frame(place={0: (2, 0.52), 1: (2, 0.50)}, SessionState=4, SessionTime=200.0, CarIdxF2Time=[0.0] * 64))
+    assert car(st, 1)["gl"] == pytest.approx(2.0)
+
+
+def test_relative_is_iracings_estimate_not_the_elapsed_time(engine):
+    engine.set_session(session([0, 1], "Race"))
+    est = [0.0] * 64
+    est[0], est[1] = 50.0, 54.0
+    place = lambda t: {0: (2, 0.50), 1: (2, 0.54)}
+    for k, p in enumerate((.40, .45, .50)):   # I came slowly to .50: the PassLog says much more than 4 s
+        engine.update(frame(place={0: (2, p), 1: (2, .54 + k * .01)}, SessionState=4, SessionTime=200.0 + k * 10, CarIdxEstTime=est))
+    st = engine.update(frame(place=place(0), SessionState=4, SessionTime=230.0, CarIdxEstTime=est))
+    assert st["rel"][0]["dt"] == pytest.approx(4.0)
+
+
 def test_relative_ahead_and_behind(engine):
     engine.set_session(session([0, 1, 2], "Race"))
     st = engine.update(frame(place={0: (2, 0.50), 1: (2, 0.52), 2: (2, 0.48)}, SessionState=4, SessionTime=200.0))
@@ -312,6 +338,16 @@ def test_laps_to_flag_timed_race_goes_by_the_leader():
     # my own clock (0.5 s, half a lap to the line) would have said 0.5: a lap of fuel short
     assert laps_to_flag(20.9, 100, 20.9, 100, time_rem=0.0) == pytest.approx(0.1)
     assert laps_to_flag(10.0, 100, 10.0, 100, time_rem=1000.0) == pytest.approx(10.0)
+
+
+def test_laps_to_flag_my_stop_to_come():
+    # Spa, 40 min: at the pit entry, end of lap 12, ahead of a leader who already stopped and has 6.08 to go
+    t = 748.3
+    assert laps_to_flag(11.92, 136.3, 11.988, 136.3, time_rem=t) == pytest.approx(7.012)
+    assert laps_to_flag(11.92, 136.3, 11.988, 136.3, time_rem=t, stop=25.0) == pytest.approx(6.012)
+    # leading, my stop moves the flag too: without it the clock runs out just into another lap
+    assert laps_to_flag(10.0, 100, 10.0, 100, time_rem=610.0) == pytest.approx(7.0)
+    assert laps_to_flag(10.0, 100, 10.0, 100, time_rem=610.0, stop=25.0) == pytest.approx(6.0)
 
 
 def test_laps_to_flag_both_limits_first_one_wins():

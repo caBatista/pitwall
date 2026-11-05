@@ -18,7 +18,7 @@ export const weather = {
     this.grid.innerHTML = `
       <div><div class="kv"><small>Track</small></div><div class="wx-temp"><b id="wx-tr">–</b><em id="wx-tru"></em><span class="trend" id="wx-trt"></span></div></div>
       <div><div class="kv"><small>Air</small></div><div class="wx-temp"><b id="wx-ai">–</b><em id="wx-aiu"></em><span class="trend" id="wx-ait"></span></div></div>
-      <div><div class="kv"><small>Track surface</small><b id="wx-wn" style="font-size:13px">–</b></div><div class="wet" id="wx-wet">${'<i></i>'.repeat(7)}</div></div>
+      <div><div class="kv"><small>Track surface</small><b id="wx-wn" style="font-size:13px">–</b></div><div class="wet-bar" id="wx-wet">${'<i></i>'.repeat(7)}</div></div>
       <div style="display:flex;gap:12px;align-items:center;justify-content:flex-end">
         <div class="kv" style="text-align:right"><small>Wind</small><b id="wx-wd">–</b><small id="wx-wdu" style="margin-top:2px"></small></div>
         <div class="compass"><svg viewBox="0 0 64 64"><g id="wx-arrow"><path d="M32 8 L40 36 L32 31 L24 36 Z" fill="var(--accent)"/></g>
