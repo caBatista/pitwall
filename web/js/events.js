@@ -11,12 +11,12 @@ import { esc, lapTime, prefs, savePrefs } from './util.js';
  */
 const GROUPS = { pass: 'Battles', inc: 'Incidents', pit: 'Pits', lap: 'Laps', flag: 'Flags' };
 const GROUP_OF = {
-  pass: 'pass', fight: 'pass', inc: 'inc', acc: 'inc', off: 'inc', stop: 'inc', out: 'inc', pit: 'pit', fast: 'lap', pb: 'lap', q: 'lap', inv: 'lap',
+  pass: 'pass', fight: 'pass', inc: 'inc', acc: 'inc', off: 'inc', stop: 'inc', out: 'inc', pit: 'pit', fast: 'lap', pb: 'lap', q: 'lap',
   pen: 'flag', finish: 'flag',
 };
 const SESSIONS = { practice: 'Practice', qualify: 'Qualify', race: 'Race', test: 'Test' };
 const TAG = {
-  pass: 'Pass', fight: 'Fight', inc: 'Inc', acc: 'Acc', off: 'Off', stop: 'Stop', out: 'Out', pit: 'Pit', fast: 'Fast', pb: 'PB', q: 'Lap', inv: 'Inv', pen: 'Flag', finish: 'Finish',
+  pass: 'Pass', fight: 'Fight', inc: 'Inc', acc: 'Acc', off: 'Off', stop: 'Stop', out: 'Out', pit: 'Pit', fast: 'Fast', pb: 'PB', q: 'Lap', pen: 'Flag', finish: 'Finish',
   caution: 'Caution', clear: 'Clear', red: 'Red',
 };
 const isAccident = (e) => e.k === 'acc' || (e.k === 'inc' && e.n >= 2) || e.k === 'caution' || e.k === 'clear' || e.k === 'red';
@@ -44,7 +44,6 @@ function line(S, e, ref) {
     case 'fast': return `${who(e.i)} fastest lap of the class <i>${lapTime(e.v)}</i>`;
     case 'pb': return `${who(e.i)} personal best <i>${lapTime(e.v)}</i>`;
     case 'q': return `${who(e.i)} ${e.pole ? 'takes pole' : `P${e.p}`} <i>${lapTime(e.v)}</i>`;
-    case 'inv': return `${who(e.i)} invalid lap`;
     case 'finish': return `${who(e.i)} takes the flag${e.p ? ` in P${e.p}` : ''}`;
     case 'caution': return 'Caution';
     case 'clear': return 'Caution over';

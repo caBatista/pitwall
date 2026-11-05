@@ -181,6 +181,8 @@ function connect() {
         if (m.session) document.body.toggleAttribute('data-over', !!m.session.over);
         // out of the car: standings, Race Events and the map
         if (m.session) document.body.toggleAttribute('data-out', !m.session.inCar);
+        // a finished race in the replay: the result and Race Events, nothing else
+        if (m.session) document.body.toggleAttribute('data-static', !!m.session.static);
         break;
     }
   };

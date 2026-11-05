@@ -22,7 +22,7 @@ from types import SimpleNamespace
 
 MAX_EVENTS = 6000
 REPLAY_LEAD = 5.0     # the replay starts this many seconds before the event
-PASS_HOLD = 2.5       # a pass counts once it lasted this long: side by side the order flips back and forth
+PASS_HOLD = 8.0       # s with no more swaps between two cars: then the battle is over and the net result counts
 FIGHT_GAP = 5.5       # m between two cars of the same class on the same lap: alongside, a car length
 FIGHT_MIN = 1.0       # s alongside for it to be a fight
 FIGHT_END = 2.0       # s apart: it ended, and whoever is still ahead held the position
@@ -34,7 +34,6 @@ ACC_NEAR = 15.0       # m: somebody this close at that moment: contact
 EXACT_WINDOW = 180.0  # s: the results arrive late; a slowdown this recent is when it happened
 SAME_EVENT = 3.0      # s: same event, same cars, this close in time: seen twice
 SEEK = 5.0            # s skipped between two frames: a jump in the replay, not racing
-PASS_COOLDOWN = 6.0   # same two cars, again this soon: the same fight
 PIT_GRACE = 8.0       # just out of the pits: rejoining in front of someone is not a pass
 OFF_MIN = 1.0         # s off track for it to count; a wheel over the kerb doesn't
 OFF_COOLDOWN = 5.0
@@ -77,8 +76,7 @@ class EventLog:
         for i, b in self._best.items():
             c = f.cls[i]
             self._cbest[c] = min(b, self._cbest.get(c, b))
-        self._top = {i: (f.laps.get(i) or (None,))[0] for i in f.present}
-        self._seq, self._pending, self._pair_t, self._fight = {}, {}, {}, {}
+        self._seq, self._battle, self._fight = {}, {}, {}
         self._pace, self._acc_pos, self._acc_low, self._acc_t, self._slow = {}, {}, {}, {}, {}
         self._counts = dict(f.counts)   # what is already there isn't news
         self._pit = {i: bool(f.pitr[i]) for i in f.present}
@@ -256,11 +254,6 @@ class EventLog:
         if f.kind == "race" and f.state < 4:   # before the green Fastest shows the qualifying laps
             return
         for i in f.present:
-            top = (f.laps.get(i) or (None,))[0]
-            if top is not self._top.get(i):
-                self._top[i] = top
-                if top and top[1]:
-                    self.add(f.t, "inv", i=i)
             b = f.best[i]
             prev = self._best.get(i)
             if b <= 0 or (prev is not None and b >= prev - 1e-4):
@@ -301,17 +294,17 @@ class EventLog:
                     for k, a in enumerate(seq):
                         for b in seq[k + 1:]:
                             if a in was and b in was and was[a] > was[b]:
-                                self._pending.setdefault((a, b), f.t)
+                                r = self._battle.setdefault((min(a, b), max(a, b)), {"front": b})
+                                r.update(t=f.t, lap=self._lap, at={a: self.lap_of(a), b: self.lap_of(b)})
         self._fights_over(f)
-        for (a, b), t0 in list(self._pending.items()):
-            if not (self._ok_for_pass(f, a) and self._ok_for_pass(f, b)) or f.tot[a] <= f.tot[b]:
-                del self._pending[(a, b)]
-            elif f.t - t0 >= PASS_HOLD:
-                del self._pending[(a, b)]
-                pair = (min(a, b), max(a, b))
-                if t0 - self._pair_t.get(pair, -1e9) >= PASS_COOLDOWN:
-                    self.add(t0, "pass", i=a, j=b, p=f.cpos.get(a))
-                self._pair_t[pair] = t0
+        for (a, b), r in list(self._battle.items()):
+            if not (self._ok_for_pass(f, a) and self._ok_for_pass(f, b)):
+                del self._battle[(a, b)]
+            elif f.t - r["t"] >= PASS_HOLD:
+                del self._battle[(a, b)]
+                front, back = (a, b) if f.tot[a] > f.tot[b] else (b, a)
+                if front != r["front"]:   # ending where it started is an attempt: _fights_over tells it
+                    self.add(r["t"], "pass", i=front, j=back, p=f.cpos.get(front), lap=r["lap"], cl=r["at"][front], cj=r["at"][back])
 
     def _alongside(self, f, cars):
         """Two cars side by side for a moment: an attack and a defence, even if nothing changed in the end."""

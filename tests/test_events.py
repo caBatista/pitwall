@@ -294,7 +294,7 @@ def test_the_speed_never_comes_after_the_search():
     assert calls == ["replay_set_play_speed", "replay_search"]
 
 
-def pace_lap(engine, t0, slow_from=None, near=None, cars=(0, 1, 2), step=.25):
+def pace_lap(engine, t0, slow_from=None, near=None, cars=(0, 1, 2), step=.25, replay=False):
     """Tres carros em volta normal; o 1 cai para 20% do ritmo a partir de slow_from."""
     pos = {1: 0.30}
     t = t0
@@ -302,7 +302,7 @@ def pace_lap(engine, t0, slow_from=None, near=None, cars=(0, 1, 2), step=.25):
         pos[1] += (.002 if slow_from and t >= slow_from else .01) * step * 2
         pos[2] = pos[1] + near if near else pos.get(2, .55) + .01 * step * 2
         place = {0: (5, .05), 1: (5 + int(pos[1]), pos[1] % 1.0), 2: (2, pos[2] % 1.0)}
-        engine.update(racing(place, t))
+        engine.update(racing(place, t, **(dict(IsReplayPlaying=True, ReplaySessionTime=t, ReplaySessionNum=0, ReplayFrameNumEnd=60000) if replay else {})))
         t += step
     return t
 
@@ -391,7 +391,7 @@ def test_each_car_keeps_its_own_lap(engine):
 def test_the_list_survives_a_restart(engine, tmp_path):
     setup(engine)
     run(engine, 100, 103, lambda t: racing({0: (5, .50), 1: (5, .49)}, t))
-    run(engine, 103, 110, lambda t: racing({0: (5, .50), 1: (5, .49 if t < 104 else .51)}, t))
+    run(engine, 103, 115, lambda t: racing({0: (5, .50), 1: (5, .49 if t < 104 else .51)}, t))
     assert kinds(engine, "pass")
     path = tmp_path / "events.json"
     engine.ev.save(path)
@@ -411,3 +411,52 @@ def test_the_list_survives_a_restart(engine, tmp_path):
     third.load(path)
     third.feed(SimpleNamespace(**{**vars(engine.ev._f), "sub": "outra"}))
     assert not third.items
+
+
+def test_getting_ahead_for_a_moment_and_losing_it_is_no_pass(engine):
+    """T1 da volta 5: fiquei um pouco na frente por fora; quem ja estava na frente nao me passou."""
+    setup(engine)
+    run(engine, 100, 103, lambda t: racing({0: (5, .50), 1: (5, .49)}, t))
+    run(engine, 103, 125, lambda t: racing({0: (5, .50), 1: (5, .49 if t < 105 or t >= 109 else .51)}, t))
+    assert not kinds(engine, "pass")
+
+
+def test_a_battle_counts_by_how_it_ended(engine):
+    setup(engine)
+    run(engine, 100, 103, lambda t: racing({0: (5, .50), 1: (5, .49)}, t))
+    run(engine, 103, 125, lambda t: racing({0: (5, .50), 1: (5, .51 if 104 <= t < 106 or t >= 110 else .49)}, t))
+    e = kinds(engine, "pass")
+    assert [(x["i"], x["j"]) for x in e] == [(1, 0)] and 109.9 <= e[0]["t"] <= 110.3
+
+
+def test_an_invalid_lap_is_not_an_event(engine):
+    setup(engine)
+    run(engine, 100, 103, lambda t: racing({0: (5, .50), 1: (5, .49)}, t))
+    assert not kinds(engine, "inv")
+
+
+def replay_of(t, **over):
+    return racing({0: (5, .50), 1: (5, .49)}, t, IsReplayPlaying=True, ReplaySessionTime=t, ReplaySessionNum=0, ReplayFrameNumEnd=60000, **over)
+
+
+def test_a_finished_race_in_the_replay_is_the_result(engine):
+    engine.set_session(session(results=[{"CarIdx": 1, "Position": 1, "FastestTime": 90.5, "LastTime": 91.0}, {"CarIdx": 0, "Position": 2, "FastestTime": 91.5, "LastTime": 92.0}]))
+    engine.sessions[0]["ResultsOfficial"] = 1
+    st = engine.update(replay_of(100))
+    assert st["session"]["static"] and st["session"]["over"]
+    assert [c["i"] for c in sorted((c for c in st["cars"] if c["p"]), key=lambda c: c["p"])][:2] == [1, 0]   # a ordem final, nao a da pista
+
+
+def test_a_race_still_running_in_the_replay_stays_live(engine):
+    engine.set_session(session(results=[{"CarIdx": 0, "Position": 1}, {"CarIdx": 1, "Position": 2}]))
+    assert not engine.update(replay_of(100))["session"]["static"]
+
+
+def test_the_past_in_the_replay_gives_estimates(engine):
+    """Vendo o passado os resultados ja sao os finais: nao crescem, entao vale a lentidao."""
+    engine.set_session(session(results=results(c0=0, c1=0, c2=0)))
+    run(engine, 0, 1, lambda t: racing({1: (5, .30)}, t, SessionState=3))
+    pace_lap(engine, 2)
+    pace_lap(engine, 90, slow_from=120, replay=True)
+    e = kinds(engine, "acc")
+    assert e and e[0]["est"] is True

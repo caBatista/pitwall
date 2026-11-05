@@ -273,6 +273,7 @@ class Engine:
         self._out = {}         # car -> laps completed when it left pit road (out lap)
         self._flag_lap = None  # my laps completed when the checkered flag came out (race over once I cross)
         self._flag_laps, self._fin = {}, set()   # everyone's laps at the flag / who took the checkered
+        self._ended = set()    # (sub-session, session): races seen reaching the flag
         self._race_gaps = {}   # car -> its gap fields on the last frame before the checkered flag
         self._pits = {}        # car -> [lap of its last pit stop, pit road entry time, time on pit road or None while there]
         self._laps = {}        # car -> deque of its latest laps (time, invalid?), newest first
@@ -525,6 +526,22 @@ class Engine:
         last = [x if x > 0 else float((res.get(i) or {}).get("LastTime") or -1) for i, x in enumerate(last)]
         stype = (sess.get("SessionType") or "").strip()
         kind = session_kind(stype)
+        # how far behind live the sim is showing: 60 replay frames a second, counted from the end
+        # (a saved replay has no live: what it plays is the race)
+        saved_replay = bool(self.meta.get("replayFile"))
+        replay_behind = (raw.get("ReplayFrameNumEnd") or 0) / 60.0 if raw.get("IsReplayPlaying") and not saved_replay else 0.0
+        live = replay_behind <= 3 and not saved_replay
+        true_state = int(raw.get("SessionState") or 0)
+        ev_best = best
+        # a race that ended, seen in the replay: the telemetry is that moment, the board is the result
+        ended = (self.meta.get("subId"), snum)
+        if kind == "race" and live and true_state >= 5:
+            self._ended.add(ended)
+        static = kind == "race" and not live and bool(sess.get("ResultsOfficial") or ended in self._ended)
+        if static:
+            raw = {**raw, "SessionState": 6}
+            best = [t if (t := float((res.get(i) or {}).get("FastestTime") or -1)) > 0 else b for i, b in enumerate(best)]
+            last = [t if (t := float((res.get(i) or {}).get("LastTime") or -1)) > 0 else x for i, x in enumerate(last)]
         is_race = kind == "race"
         flag = flag_name(raw.get("SessionFlags"))
         me = int(raw.get("PlayerCarIdx") if raw.get("PlayerCarIdx") is not None else self.player)
@@ -923,9 +940,6 @@ class Engine:
 
         own = foc == me
 
-        # how far behind live the sim is showing: 60 replay frames a second, counted from the end
-        # (a saved replay has no live: what it plays is the race)
-        behind = (raw.get("ReplayFrameNumEnd") or 0) / 60.0 if raw.get("IsReplayPlaying") and not self.meta.get("replayFile") else 0.0
         self.in_car = bool(raw.get("IsOnTrack"))
         # in a replay SessionTime keeps being the live clock; the moment on screen is ReplaySessionTime
         replaying = bool(raw.get("IsReplayPlaying"))
@@ -934,10 +948,10 @@ class Engine:
         watched = self.sessions.get(ev_num) if ev_num != snum else None   # a replay of another session
         ev_kind = session_kind((watched.get("SessionType") or "").strip()) if watched else kind
         ev_frame = SimpleNamespace(
-            t=ev_t, sub=self.meta.get("subId"), snum=ev_num, kind=ev_kind, state=state, flags=int(raw.get("SessionFlags") or 0),
+            t=ev_t, sub=self.meta.get("subId"), snum=ev_num, kind=ev_kind, state=true_state, flags=int(raw.get("SessionFlags") or 0),
             me=me, present=present, cls={i: self.drivers[i]["cls"] for i in present}, tot=tot, pct=pct, surf=surf, pitr=pitr,
-            best=best, cflags=cflags, car_flag=car_flag, cpos=cpos, fin=set(self._fin), laps=self._laps, inc=inc, 
-            counts={i: int(r.get("Incidents") or 0) for i, r in res.items() if i is not None}, counts_known=bool(res),
+            best=ev_best, cflags=cflags, car_flag=car_flag, cpos={} if static else cpos, fin=set() if static else set(self._fin), inc=inc,
+            counts={i: int(r.get("Incidents") or 0) for i, r in res.items() if i is not None}, counts_known=bool(res) and live,
             laps_done=lambda i: (lapc[i] if lapc[i] is not None else -1), length=(self.meta.get("lengthKm") or 5.0) * 1000,
         )
         try:
@@ -956,7 +970,7 @@ class Engine:
             "type": "state", "connected": True, "t": round(t, 2),
             "session": {
                 "type": stype or "Session", "name": sess.get("SessionName") or stype,
-                "isRace": is_race, "kind": kind, "state": int(raw.get("SessionState") or 0), "over": over,
+                "isRace": is_race, "kind": kind, "state": int(raw.get("SessionState") or 0), "over": over, "static": static,
                 "stateName": SESSION_STATE.get(int(raw.get("SessionState") or 0), ""),
                 "flag": flag, "timeRemain": tr,
                 "timeTotal": time_total if time_total < UNLIMITED_TIME else None,
@@ -965,7 +979,7 @@ class Engine:
                 # my race length in laps, and whether it is an estimate (timed race, or lapped)
                 "raceLaps": race_laps[0] if race_laps else None, "raceLapsEst": bool(race_laps and race_laps[1]),
                 "tod": raw.get("SessionTimeOfDay"), "replay": bool(raw.get("IsReplayPlaying")),
-                "inCar": self.in_car, "behind": round(behind, 1), "num": snum, "player": me,
+                "inCar": self.in_car, "behind": round(replay_behind, 1), "num": snum, "player": me,
                 "units": "imperial" if raw.get("DisplayUnits") == 0 else "metric",
             },
             "me": {
