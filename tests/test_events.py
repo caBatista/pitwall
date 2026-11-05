@@ -373,3 +373,82 @@ def test_a_finished_race_in_the_replay_is_the_result(engine):
 def test_a_race_still_running_in_the_replay_stays_live(engine):
     engine.set_session(session(results=[{"CarIdx": 0, "Position": 1}, {"CarIdx": 1, "Position": 2}]))
     assert not engine.update(replay_of(100))["session"]["static"]
+
+
+def vanish(f, i):
+    """Lap -1, distance -1, off the world: what iRacing sends for a moment now and then."""
+    f["CarIdxLapCompleted"][i], f["CarIdxLapDistPct"][i], f["CarIdxTrackSurface"][i] = -1, -1.0, -1
+    return f
+
+
+def test_a_car_vanishing_at_the_line_passes_nobody(engine):
+    setup(engine)
+
+    def make(t):
+        if t < 10:                         # 1 lidera, chegando na linha
+            return racing({0: (5, .90), 1: (5, .95 + t * .004)}, t)
+        if t < 11.5:                       # some da telemetria ao cruzar
+            return vanish(racing({0: (5, .91), 1: (6, .01)}, t), 1)
+        if t < 12.5:                       # volta com a distancia virada e o contador ainda atrasado
+            return racing({0: (5, .92), 1: (5, .02)}, t)
+        return racing({0: (5, .93), 1: (6, .03)}, t)
+    run(engine, 0, 30, make)
+    assert not kinds(engine, "pass")
+    assert not kinds(engine, "out")
+
+
+def test_a_car_that_stays_away_did_leave(engine):
+    setup(engine)
+    run(engine, 0, 20, lambda t: vanish(racing({0: (5, .50), 1: (5, .40)}, t), 1) if t >= 5 else racing({0: (5, .50), 1: (5, .40)}, t))
+    out = kinds(engine, "out")
+    assert len(out) == 1 and out[0]["i"] == 1 and 4.9 <= out[0]["t"] <= 5.3
+
+
+def flagged(place, t, flag_t, **over):
+    return racing(place, t, SessionState=5 if t >= flag_t else 4, **over)
+
+
+def test_a_pass_after_the_flag_counts(engine):
+    setup(engine)
+
+    def make(t):   # 2 ganha aos 5 s; 1 passa 0 aos 10 s, ja na ultima volta dos dois
+        return flagged({2: (10 if t >= 5 else 9, .05 if t >= 5 else .99), 0: (9, .50 + t * .002), 1: (9, .50 + t * .003 - (.005 if t < 10 else 0) + (.0 if t < 10 else -.002))}, t, 5)
+    run(engine, 0, 25, make)
+    p = kinds(engine, "pass")
+    assert [(e["i"], e["j"], e["p"]) for e in p] == [(1, 0, 2)]
+
+
+def test_a_pass_on_the_line_counts_and_the_cool_down_does_not(engine):
+    setup(engine)
+
+    def make(t):
+        if t < 8:
+            return flagged({2: (10, .05), 0: (9, .96), 1: (9, .95)}, t, 1)
+        if t < 10:      # 1 passa 0 a 2 s da linha
+            return flagged({2: (10, .05), 0: (9, .97), 1: (9, .98)}, t, 1)
+        # os dois cruzam; 1 primeiro. Depois, na volta de resfriamento, 0 vai embora
+        if t < 10.5:
+            return flagged({2: (10, .05), 1: (10, .01), 0: (9, .99)}, t, 1)
+        return flagged({2: (10, .05), 1: (10, .01), 0: (10, .01 + (t - 10.5) * .02)}, t, 1)
+    run(engine, 0, 30, make)
+    assert [(e["i"], e["j"]) for e in kinds(engine, "pass")] == [(1, 0)]
+
+
+def test_finishing_position_is_where_the_car_is_not_where_it_was(engine):
+    setup(engine)
+
+    def make(t):   # iRacing ainda diz P3 para 1 quando ele cruza a linha em P2
+        f = flagged({2: (10, .05), 1: (10 if t >= 8 else 9, .01 if t >= 8 else .98), 0: (10 if t >= 12 else 9, .01 if t >= 12 else .97)}, t, 1)
+        return f
+    run(engine, 0, 15, make)
+    assert [(e["i"], e["p"]) for e in kinds(engine, "finish")] == [(1, 2), (0, 3)]   # o 2 ja estava na frente
+
+
+def test_the_winner_is_first_even_with_the_counter_a_lap_short(engine):
+    setup(engine)
+    log = engine.ev
+
+    def make(t):   # na bandeirada o contador do lider ainda nao virou (visto no iRacing): 9 + .9999
+        return flagged({0: (9 if t < 6 else 10, .9999 if t < 6 else .01), 1: (9, .95), 2: (9 if t < 8 else 10, .99 if t < 8 else .01)}, t, 5, CarIdxPosition=[1, 2, 3] + [0] * 61)
+    run(engine, 0, 10, make)
+    assert [(e["i"], e["p"]) for e in log.items if e["k"] == "finish"] == [(0, 1), (2, 2)]

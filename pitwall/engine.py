@@ -430,7 +430,10 @@ class Engine:
         """The lap counter and the lap distance don't flip on the same frame at the line. Added up, the
         car would jump a whole lap back or forward for a moment: order and gaps blink. Crew Chief
         corrects the same mismatch. Returns -1, 0 or +1 to add to the laps; never for more than 2 s, so
-        a tow or a reset isn't taken for a line crossing."""
+        a tow or a reset isn't taken for a line crossing. A car that vanished from the telemetry changes
+        nothing here: if it crossed the line meanwhile, it is the wrapped distance that says so."""
+        if laps < 0 or pct < 0:
+            return 0
         prev = self._lap_sync.get(i)
         fix, since = 0, t
         if prev:

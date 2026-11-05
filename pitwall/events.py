@@ -27,6 +27,10 @@ FIGHT_END = 2.0       # s apart: it ended, and whoever is still ahead held the p
 SAME_EVENT = 3.0      # s: same event, same cars, this close in time: seen twice
 SEEK = 5.0            # s skipped between two frames: a jump in the replay, not racing
 PIT_GRACE = 8.0       # just out of the pits: rejoining in front of someone is not a pass
+# A car can vanish from the telemetry for a moment, lap -1 and position -1 (1.4 s at the line, seen in a
+# race, 2026-11-05). It comes back with its lap counter a lap short for a second, last of the field, and
+# then "passes" everybody at once. Not gone for longer than this, it never left; just back, it doesn't count.
+GONE_HOLD = 5.0
 OFF_MIN = 1.0         # s off track for it to count; a wheel over the kerb doesn't
 OFF_COOLDOWN = 5.0
 STOP_SECS = 3.0       # s without moving, on track
@@ -73,9 +77,11 @@ class EventLog:
         self._pit_in, self._pit_out = {}, {}
         self._surf = {i: f.surf[i] for i in f.present}
         self._off, self._off_t = {}, {}
+        self._gone, self._back = {}, {}
         self._anchor, self._stopped, self._sample = {}, set(), f.t
         self._cflag = {i: f.car_flag(f.cflags[i]) for i in f.present}
         self._fin = set(f.fin)
+        self._fin_at = {i: (round(f.tot[i]), n) for n, i in enumerate(sorted(f.fin))}
         self._t = f.t
 
     def lap_of(self, i):
@@ -105,7 +111,7 @@ class EventLog:
         """Kept on disk so that restarting the app mid-event doesn't lose the list."""
         tmp = f"{path}.tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump({"sub": self.sub, "items": self.items}, fh)
+            json.dump({"sub": self.sub, "items": self.items}, fh, default=str)
         os.replace(tmp, path)
 
     def load(self, path):
@@ -163,7 +169,7 @@ class EventLog:
         for i in f.present:
             self._car(f, i)
         self._laps(f)
-        if f.kind == "race" and f.state == 4:
+        if f.kind == "race" and f.state in (4, 5):   # 5: the last lap of everyone behind the winner
             self._passes(f)
         if f.t - self._sample >= 1.0:
             self._sample = f.t
@@ -184,9 +190,25 @@ class EventLog:
         if rising & RED:
             self.add(f.t, "red")
         self._state, self._flags = f.state, f.flags
-        for i in f.fin - self._fin:
-            self.add(f.t, "finish", i=i, p=f.cpos.get(i))
+        for i in sorted(f.fin - self._fin, key=lambda c: -f.tot[c]):   # two on the same frame: the one further on first
+            self._fin_at[i] = (round(f.tot[i]), len(self._fin_at))   # at the line: the counter may still be a lap short
+            self.add(f.t, "finish", i=i, p=self._place(f, i))
         self._fin |= f.fin
+
+    def _dist(self, f, i):
+        """How far it got: a car that took the flag stays there, whatever it does on the cool-down lap."""
+        return self._fin_at[i][0] if i in self._fin_at else f.tot[i]
+
+    def _ahead(self, f, a, b):
+        """Who of the two is ahead. Same distance at the flag: who took it first."""
+        da, db = self._dist(f, a), self._dist(f, b)
+        if da != db:
+            return a if da > db else b
+        return a if self._fin_at.get(a, (0, 1e9))[1] < self._fin_at.get(b, (0, 1e9))[1] else b
+
+    def _place(self, f, i):
+        """Position in the class right now. After the flag iRacing's only changes once the car crosses the line."""
+        return 1 + sum(1 for x in f.present if x != i and f.cls[x] == f.cls[i] and self._ahead(f, x, i) == x)
 
     def _incidents(self, f):
         if f.inc is None or self._inc is None or f.inc <= self._inc:
@@ -223,8 +245,7 @@ class EventLog:
                 if s >= 0 and began:
                     self.add(began[0], "pit", i=i, d=round(f.t - began[0], 1), lap=began[1], cl=began[2])
                     self._pit_out[i] = f.t
-            if f.state == 4 and s < 0 <= self._surf.get(i, -1):
-                self.add(f.t, "out", i=i)
+            self._gone_car(f, i)
         self._pit[i] = p
         self._surf[i] = s
         # black flag, meatball, slow down, DQ: when it comes up
@@ -232,6 +253,21 @@ class EventLog:
         if cf and cf != self._cflag.get(i):
             self.add(f.t, "pen", i=i, f=cf)
         self._cflag[i] = cf
+
+    def _gone_car(self, f, i):
+        """Left the world, for real: it stayed away. Back in a moment: telemetry, not racing."""
+        missing = f.surf[i] < 0 or f.pct[i] < 0 or f.laps_done(i) < 0
+        g = self._gone.get(i)
+        if missing:
+            if g is None and self._surf.get(i, -1) >= 0:
+                self._gone[i] = g = [f.t, False]
+            if g and not g[1] and f.t - g[0] >= GONE_HOLD:
+                g[1] = True
+                if f.state == 4:
+                    self.add(g[0], "out", i=i)
+        elif g:
+            del self._gone[i]
+            self._back[i] = f.t
 
     def _laps(self, f):
         if f.kind == "race" and f.state < 4:   # before the green Fastest shows the qualifying laps
@@ -258,12 +294,13 @@ class EventLog:
 
     def _ok_for_pass(self, f, i):
         return f.surf[i] in (ON_TRACK, OFF_TRACK) and not f.pitr[i] and f.laps_done(i) >= 0 \
-            and f.t - self._pit_out.get(i, -1e9) > PIT_GRACE
+            and f.t - self._pit_out.get(i, -1e9) > PIT_GRACE \
+            and i not in self._gone and f.t - self._back.get(i, -1e9) > GONE_HOLD
 
     def _passes(self, f):
         groups = {}
         for i in f.present:
-            if self._ok_for_pass(f, i):
+            if i not in self._fin_at and self._ok_for_pass(f, i):   # took the flag: the race is over for that car
                 groups.setdefault(f.cls[i], []).append(i)
         for c, cars in groups.items():
             cars.sort(key=lambda i: -f.tot[i])
@@ -281,13 +318,16 @@ class EventLog:
                                 r.update(t=f.t, lap=self._lap, at={a: self.lap_of(a), b: self.lap_of(b)})
         self._fights_over(f)
         for (a, b), r in list(self._battle.items()):
-            if not (self._ok_for_pass(f, a) and self._ok_for_pass(f, b)):
+            ended = a in self._fin_at or b in self._fin_at   # the line settles it, however fresh the swap
+            if not ended and not (self._ok_for_pass(f, a) and self._ok_for_pass(f, b)):
                 del self._battle[(a, b)]
-            elif f.t - r["t"] >= PASS_HOLD:
+            elif ended or f.t - r["t"] >= PASS_HOLD:
                 del self._battle[(a, b)]
-                front, back = (a, b) if f.tot[a] > f.tot[b] else (b, a)
+                front = self._ahead(f, a, b)
+                back = b if front == a else a
                 if front != r["front"]:   # ending where it started is an attempt: _fights_over tells it
-                    self.add(r["t"], "pass", i=front, j=back, p=f.cpos.get(front), lap=r["lap"], cl=r["at"][front], cj=r["at"][back])
+                    p = self._place(f, front) if f.state >= 5 else f.cpos.get(front)
+                    self.add(r["t"], "pass", i=front, j=back, p=p, lap=r["lap"], cl=r["at"][front], cj=r["at"][back])
 
     def _alongside(self, f, cars):
         """Two cars side by side for a moment: an attack and a defence, even if nothing changed in the end."""
@@ -304,7 +344,7 @@ class EventLog:
             a, b = pair
             if r["last"] - r["t0"] < FIGHT_MIN or not (self._ok_for_pass(f, a) and self._ok_for_pass(f, b)):
                 continue
-            front = a if f.tot[a] > f.tot[b] else b
+            front = self._ahead(f, a, b)
             if front == r["front"]:   # (if not, it was a pass, and that has its own event)
                 back = a if front == b else b
                 self.add(r["t0"], "fight", i=back, j=front, d=round(r["last"] - r["t0"], 1), lap=r["lap"], cl=r["at"][back], cj=r["at"][front])

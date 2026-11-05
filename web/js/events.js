@@ -85,6 +85,14 @@ export const events = {
     return S.events.filter(pick).sort((a, b) => a.sn - b.sn || a.t - b.t || a.id - b.id).slice(-MAX_ROWS);
   },
 
+  // nothing happened, or something did and the filters leave it out: not the same thing to say
+  empty(S, ref) {
+    const name = esc(S.drivers[ref]?.name ?? 'this driver');
+    const hidden = S.events.filter((e) => e.i === ref || e.j === ref).length;
+    if (!hidden) return `Nothing yet for ${name}. Events show up as they happen.`;
+    return `No events with these filters. ${hidden} ${hidden === 1 ? 'event' : 'events'} of ${name} hidden.`;
+  },
+
   rows(S, ref) {
     let html = '', lap = null, sn = null;
     const list = this.list(S, ref);
@@ -121,8 +129,7 @@ export const events = {
     this.drawn = key;
     const atEnd = this.body.scrollHeight - this.body.scrollTop - this.body.clientHeight < 30;
     const html = this.rows(S, ref);
-    const none = `Nothing yet for ${esc(S.drivers[ref]?.name ?? 'this driver')}. Events show up as they happen.`;
-    this.body.innerHTML = html || `<div class="ev-none">${none}</div>`;
+    this.body.innerHTML = html || `<div class="ev-none">${this.empty(S, ref)}</div>`;
     if (atEnd) this.body.scrollTop = this.body.scrollHeight;
   },
 };

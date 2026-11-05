@@ -214,7 +214,7 @@ class App:
             self._ev_saved, self._ev_save_t = ev.ver, time.time()
             try:
                 ev.save(self._ev_path)
-            except OSError as e:
+            except (OSError, TypeError, ValueError) as e:
                 print(f"[events] not saved: {e}", flush=True)
         out.append(dumps_clean(state))
         for text in out:
