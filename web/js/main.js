@@ -6,6 +6,8 @@ import { fuel } from './fuel.js';
 import { weather } from './weather.js';
 import { laplog } from './laplog.js';
 import { events } from './events.js';
+import { WIDGETS, boardLayout, gridArea, gridOf, sessionKey, shapeOf } from './layout.js';
+import { HEADER, hiddenIn, optOf, orderOf, viewSession } from './columns.js';
 
 const params = new URLSearchParams(location.search);
 if (params.get('bg') === 'transparent') document.body.classList.add('transparent');
@@ -70,6 +72,65 @@ if (!params.get('w')) {
   });
 }
 
+// ---- the user's layout for this session (Settings > Layout); nothing saved: the board's own CSS.
+// A finished race in the replay keeps its own screen. Inline styles, so nothing in app.css has to
+// know: leaving it just clears them.
+const narrow = matchMedia('(max-width: 799px), (max-width: 1180px) and (orientation: landscape)');   // a phone, a small window: one column
+const portrait = matchMedia('(orientation: portrait)');
+let layoutKey = '';
+function applyLayout() {
+  const s = S.st?.session;
+  if (!s || params.get('w')) return;
+  const session = sessionKey(s.kind, s.over, !s.inCar);
+  try { if (localStorage.getItem('pitwall.session') !== session) localStorage.setItem('pitwall.session', session); } catch { /* ignore */ }
+  const b = document.body.dataset;
+  const shape = shapeOf(innerWidth, innerHeight), g = gridOf(shape);
+  const list = 'static' in b || narrow.matches ? null : boardLayout(prefs.layout, session, shape);
+  const key = shape + JSON.stringify(list);
+  if (key === layoutKey) return;
+  layoutKey = key;
+  board.classList.toggle('lay', !!list);
+  const cards = Object.keys(WIDGETS).map((k) => document.getElementById(ALL[k].id));
+  const bottom = board.querySelector('.col-bottom');
+  board.style.gridTemplateColumns = list ? `repeat(${g.cols}, minmax(0, 1fr))` : '';
+  board.style.gridTemplateRows = list ? `repeat(${g.rows}, minmax(0, 1fr))` : '';
+  board.style.gridTemplateAreas = list ? 'none' : '';
+  bottom.style.display = list ? 'contents' : '';
+  for (const el of cards) {
+    const i = list?.find((o) => ALL[o.id].id === el.id);
+    el.style.gridArea = i ? gridArea(i) : '';
+    el.style.minHeight = list ? '0' : '';
+    el.style.maxHeight = list ? 'none' : '';
+    el.style.display = !list ? '' : i ? 'flex' : 'none';
+    el.style.visibility = list ? 'visible' : '';   // the map's place taking turns (data-slot) is the default screen's
+  }
+}
+for (const q of [narrow, portrait]) q.addEventListener('change', applyLayout);
+addEventListener('prefs', applyLayout);
+
+// ---- the app's header (Settings > Header): order through flex, so the elements stay where main.js finds them
+const HEAD_EL = () => ({ brand: document.querySelector('.brand'), series: el.series, track: document.querySelector('.trk'), clock: document.querySelector('.clock'), gap: document.querySelector('.spacer'), sof: el.sof.parentElement, conn: el.conn });
+let headKey = '';
+function applyHeader() {
+  const s = S.st?.session;
+  if (!s) return;
+  const session = viewSession(s.kind, s.over, !s.inCar), cfg = prefs.header;
+  const key = session + JSON.stringify(cfg);
+  if (key === headKey) return;
+  headKey = key;
+  const els = HEAD_EL();
+  orderOf(cfg, HEADER).forEach((k, n) => {
+    els[k].style.order = n * 2 + 1;
+    els[k].classList.toggle('off', hiddenIn(cfg, HEADER, k, session));
+    if (k === 'clock') document.getElementById('mock-seg').style.order = n * 2 + 2;
+  });
+  document.getElementById('set-btn').style.order = 99;
+  els.brand.querySelector('b').hidden = !optOf(cfg, HEADER, 'brand', 'text');
+  el.sub.hidden = !optOf(cfg, HEADER, 'track', 'sub');
+  el.clkSub.hidden = !optOf(cfg, HEADER, 'clock', 'sub');
+}
+addEventListener('prefs', applyHeader);
+
 // ---- render scheduling: one frame per change, nothing in between (see "render loop" below)
 let dirty = false, queued = false;
 function invalidate() {
@@ -78,6 +139,7 @@ function invalidate() {
 }
 addEventListener('click', invalidate);   // a mode changed: show it even with the sim paused
 addEventListener('input', invalidate);
+addEventListener('prefs', invalidate);   // changed in the settings pop-up
 // ---- UI scale: ?zoom=1.2 for this screen, or +/- keys (saved), 0 resets ----------------
 function setZoom(z) {
   z = Math.round(Math.min(2, Math.max(0.7, z)) * 100) / 100;
@@ -94,6 +156,7 @@ addEventListener('keydown', (e) => {
   if (e.key === 'F5' && window.pywebview?.api) { e.preventDefault(); location.reload(); return; }
   // desktop app (pywebview): F11 toggles full screen of the native window
   if (e.key === 'F11' && window.pywebview?.api) { e.preventDefault(); window.pywebview.api.fullscreen(); return; }
+  if (e.key === 's' || e.key === 'S') { openSettings(); return; }
   const step = { '+': 0.05, '=': 0.05, '-': -0.05 }[e.key];
   if (step) prefs.zoom = setZoom(prefs.zoom + step);
   else if (e.key === '0') prefs.zoom = setZoom(1.1);
@@ -101,11 +164,12 @@ addEventListener('keydown', (e) => {
   savePrefs();
 });
 
-// ---- desktop app: hidden full-screen toggle in the top-right corner (only inside pywebview)
-addEventListener('pywebviewready', () => {
-  document.body.classList.add('desktop');
-  $('fs-btn').addEventListener('click', () => window.pywebview.api.fullscreen());
-});
+// a window of its own: in the app a native pop-up, in a browser (tablet, --lan) a browser one
+function openSettings() {
+  if (window.pywebview?.api) window.pywebview.api.settings();
+  else window.open('/settings.html', 'pitwall-settings', 'width=980,height=680')?.focus();
+}
+document.getElementById('set-btn').addEventListener('click', openSettings);
 
 // ---- header ---------------------------------------------------------------------
 const $ = (id) => document.getElementById(id);
@@ -121,6 +185,7 @@ fetch('/series.json').then((r) => (r.ok ? r.json() : {})).then((j) => { SERIES =
 
 function header() {
   const st = S.st, m = S.meta;
+  if (S.source === 'simulator') mockSession();
   if (m.track) {
     el.name.textContent = m.track;
     const bits = [m.config, m.lengthKm ? (prefs.units === 'imperial' ? (m.lengthKm * 0.621371).toFixed(2) + ' mi' : m.lengthKm.toFixed(2) + ' km') : '', m.turns ? m.turns + ' turns' : ''].filter(Boolean);
@@ -132,11 +197,24 @@ function header() {
   el.sof.textContent = m.sof || '–';
   if (!st || !st.session) return;
   const s = st.session;
-  el.sof.parentElement.hidden = s.kind === 'test';   // no field to rate in a test session
   const rem = s.timeRemain;
   el.clk.textContent = clock(rem != null ? rem : st.t);
   const laps = s.lapsTotal && st.me.lap != null ? `Lap ${st.me.lap}/${s.lapsTotal}` : st.me.lap != null ? `Lap ${st.me.lap}` : '';
   el.clkSub.textContent = [s.name || s.type, rem != null ? 'Remaining' : 'Elapsed', laps].filter(Boolean).join(' · ');
+}
+
+// simulator only: which session it is pretending, and asking for another one
+const mockSeg = document.getElementById('mock-seg');
+mockSeg.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-mock]');
+  if (b) S.send({ cmd: 'mock_session', kind: b.dataset.mock });
+});
+function mockSession() {
+  const s = S.st?.session;
+  const now = s && sessionKey(s.kind, s.over, !s.inCar);
+  if (now === mockSeg.dataset.now) return;
+  mockSeg.dataset.now = now;
+  for (const b of mockSeg.children) b.classList.toggle('on', b.dataset.mock === now);
 }
 
 function status() {
@@ -161,7 +239,7 @@ function connect() {
     if (e.data === S.raw && !fx.live && settled) return;
     const m = JSON.parse(e.data);
     switch (m.type) {
-      case 'hello': S.source = m.source; break;
+      case 'hello': S.source = m.source; mockSeg.hidden = m.source !== 'simulator'; break;
       case 'drivers':
         S.drivers = m.drivers; S.meta = m.meta || {}; S.classes = m.classes || [];
         S.classMap = new Map(S.classes.map((c) => [c.id, c]));
@@ -183,6 +261,8 @@ function connect() {
         if (m.session) document.body.toggleAttribute('data-out', !m.session.inCar);
         // a finished race in the replay: the result and Race Events, nothing else
         if (m.session) document.body.toggleAttribute('data-static', !!m.session.static);
+        applyLayout();
+        applyHeader();
         break;
     }
   };

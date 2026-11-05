@@ -62,6 +62,7 @@ body { zoom: var(--zoom, 1.1); }
 .clock-main { font: 900 34px/.82 var(--display); color: var(--accent); font-variant-numeric: tabular-nums; }
 .clock-sub { color: var(--dim); font: 500 10.5px var(--mono); margin-top: 4px; letter-spacing: .06em; text-transform: uppercase; }
 .spacer { flex: 1; }
+.top > .off { display: none; }
 .hstat { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
 .hstat small { color: var(--dim); font: 500 10px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
 .hstat b { font: 900 26px/.82 var(--display); }
@@ -70,22 +71,10 @@ body { zoom: var(--zoom, 1.1); }
 .conn.on { color: var(--green); }
 .conn.on i { background: var(--green); box-shadow: 0 0 10px var(--green); }
 .conn em { font: 500 10.5px var(--mono); font-style: normal; text-transform: uppercase; letter-spacing: .06em; }
+.set-btn { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--dim); cursor: pointer; }
+.set-btn svg { width: 16px; height: 16px; }
+.set-btn:hover { background: var(--card-2); color: var(--txt); }
 
-/* hidden full-screen toggle (desktop app): an invisible corner, shows on hover */
-.fs-btn { display: none; }
-body.desktop .fs-btn {
-  display: block; position: fixed; top: 0; right: 0; z-index: 60; width: 16px; height: 16px; padding: 0;
-  border: 0; background: transparent; cursor: pointer; opacity: 0; transition: opacity .2s;
-}
-body.desktop .fs-btn:hover { opacity: .8; }
-body.desktop .fs-btn::before {   /* four corner ticks */
-  content: ""; position: absolute; inset: 3px;
-  background:
-    linear-gradient(var(--accent), var(--accent)) left top / 4px 1.5px no-repeat,
-    linear-gradient(var(--accent), var(--accent)) left top / 1.5px 4px no-repeat,
-    linear-gradient(var(--accent), var(--accent)) right bottom / 4px 1.5px no-repeat,
-    linear-gradient(var(--accent), var(--accent)) right bottom / 1.5px 4px no-repeat;
-}
 
 /* ---------- board ---------- */
 .board {
@@ -128,6 +117,7 @@ body[data-static][data-out][data-kind] .board:not(.solo) { grid-template-columns
 body[data-static] #board > #w-map, body[data-static] #board > .col-bottom { display: none; }
 .slot-nav { display: none; position: absolute; top: 9px; left: 50%; transform: translateX(-50%); z-index: 3; gap: 4px; }
 body[data-out] .board:not(.solo) .card:hover > .slot-nav { display: flex; }
+.board.lay .slot-nav { display: none !important; }   /* the user's layout (see applyLayout in main.js) */
 .slot-nav button { width: 30px; height: 24px; padding: 0; border: 1px solid var(--line-2); border-radius: 6px; background: var(--bg-2); color: var(--accent); font: 700 17px/1 var(--mono); cursor: pointer; }
 .slot-nav button:hover { border-color: var(--accent); }
 body[data-out][data-kind] .board:not(.solo) { grid-template-rows: minmax(0, 1fr) 340px; grid-template-areas: "standings events" "standings map"; }
@@ -163,15 +153,12 @@ body.transparent .card { background: rgba(17, 17, 18, .82); backdrop-filter: blu
    pos | [class # make] | country | name [OUT] | SR | iR | tyre | int | gap | last | fastest | Δ1 Δ2 Δ3 | [radio][flag] */
 .srow, .rrow.srow {   /* .rrow.srow: beat the relative's own .rrow grid, defined further down */
   display: grid; align-items: center; column-gap: 6px;
-  grid-template-columns: 34px 106px 22px minmax(110px, 1fr) 52px 84px 26px 58px 58px 70px 70px 38px 38px 38px 54px;
+  grid-template-columns: var(--scols);   /* the user's columns, set by standings.js */
 }
 .rrow.srow { padding: 0 6px 0 0; }
 .rrow[data-i] { cursor: pointer; }
-/* race over: pos | [class # make] | country | name | SR | iR | fastest | fastest-lap tag */
-.srow.over, .rrow.srow.over { grid-template-columns: 34px 106px 22px minmax(110px, 1fr) 52px 84px 80px 54px; }
 .s-head .c, .srow .c { text-align: center; }
 .ghead .r { text-align: right; }
-.ghead .dhead { grid-column: span 3; }
 .s-body {
   overflow: hidden; flex: 1; min-height: 0; margin: 0 8px 10px; border-radius: 6px; position: relative;
 }
@@ -182,7 +169,7 @@ body.transparent .card { background: rgba(17, 17, 18, .82); backdrop-filter: blu
   height: 30px; padding-right: 6px; font: 500 10px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--dim);
 }
 .ghead .gl {   /* class, drivers and SOF across pos .. iR */
-  grid-column: 1 / span 6; display: flex; align-items: center; gap: 12px; padding-left: 6px;
+  display: flex; align-items: center; gap: 12px; padding-left: 6px; white-space: nowrap;
   color: var(--cc); font-size: 10.5px;
 }
 .ghead .gl::before { content: ""; width: 14px; height: 4px; background: var(--cc); transform: skewX(-12deg); margin-right: -2px; }
@@ -224,7 +211,9 @@ svg.tyre.wet { color: var(--blue); }
 .kv b.pos { color: var(--green); } .kv b.neg { color: var(--red); }
 .kv b .pos { color: var(--green); } .kv b .neg { color: var(--red); } .kv b .warn { color: var(--accent); }   /* incidents, by distance to the next limit */
 .me-bar .kv b { font: 900 26px/.9 var(--display); }
-.me-bar .kv:first-child b { color: var(--accent); }
+.me-bar .kv.k-pos b { color: var(--accent); }
+.me-bar { overflow: hidden; }
+.me-bar .kv { min-width: 0; white-space: nowrap; }
 
 /* ---------- relative ---------- */
 .rel-body { margin: 0 8px 10px; border-radius: 6px; overflow: hidden; }  /* rounded as a block, rows are square */
@@ -239,9 +228,10 @@ svg.tyre.wet { color: var(--blue); }
 .fxw { display: inline-flex; transform-origin: center; }   /* a new flag pops in */
 .fxw:empty { display: none; }
 /* positions gained / lost since the start (race), between the car number and the make */
-.rcar .pg { display: grid; place-items: center; min-width: 22px; font: 600 10.5px var(--num); color: var(--dim); }
-.rcar .pg.up { color: var(--green); }
-.rcar .pg.down { color: var(--red); }
+.pgc { display: grid; place-items: center; }
+.pg { font: 600 10.5px var(--num); color: var(--dim); }
+.pg.up { color: var(--green); }
+.pg.down { color: var(--red); }
 
 /* RaceLab-style blocks, full row height and cut at the 12° slant so they nest:
    [ pos ][/class # on a wash of the class colour that fades out before the make logo ] */
@@ -265,7 +255,13 @@ svg.tyre.wet { color: var(--blue); }
     linear-gradient(90deg, color-mix(in srgb, var(--cc) 42%, transparent), transparent),
     var(--rn-under, none);   /* lapped row: an opaque base so the wash keeps its colour and fades into the red/blue */
 }
-.rcar .mk { flex: 1; display: grid; place-items: center; }
+.mk { display: grid; place-items: center; }
+.rcar .mk { flex: 1; }
+.srow .rcar .rn { flex: 1; min-width: 0; }
+.rcar.free { margin-left: 0; }   /* not after the position: it has no cut to tuck in under */
+.srow .rcar.free .rn { padding-left: 8px; }
+.tyre-t { font: 600 10px var(--mono); letter-spacing: .04em; color: var(--txt); }
+.tyre-t.wet { color: var(--blue); }
 .rrow .rt { text-align: right; font: 600 14px var(--num); font-variant-numeric: tabular-nums; }
 .rrow .rname { display: flex; align-items: center; gap: 6px; min-width: 0; font: 600 13px var(--num); }
 .rrow .rname .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 4em; }
@@ -455,7 +451,7 @@ svg.tyre.wet { color: var(--blue); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------- small screens ---------- */
-@media (max-width: 1180px) {
+@media (max-width: 799px), (max-width: 1180px) and (orientation: landscape) {   /* the same as narrow in main.js */
   body { overflow: auto; }
   .app { height: auto; }
   .board { grid-template-columns: 1fr; grid-template-rows: none; grid-template-areas: "standings" "relative" "map" "bottom"; }
@@ -525,3 +521,9 @@ sup.inv { color: var(--accent); font-size: .8em; line-height: 0; margin-left: 1p
 }
 .ev-live b { color: var(--accent); font-variant-numeric: tabular-nums; }
 .ev-live .ghost-btn { color: var(--accent); border-color: var(--accent); }
+
+/* a screen standing up: the header takes two lines rather than widen the board */
+@media (orientation: portrait) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .top { flex-wrap: wrap; gap: 8px 18px; }
+}

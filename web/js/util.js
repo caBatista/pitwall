@@ -1,26 +1,30 @@
+import { classDefault, footDefault, headerDefault, migrateStand } from './columns.js';
+
 export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
 /** 1:42.754 or 42.754 */
-export function lapTime(s) {
+export function lapTime(s, dec = 3) {
   if (s == null || !(s > 0)) return '–';
-  const m = Math.floor(s / 60);
-  const r = s - m * 60;
-  return m > 0 ? `${m}:${r.toFixed(3).padStart(6, '0')}` : r.toFixed(3);
+  const k = 10 ** dec, t = Math.round(s * k) / k;
+  const m = Math.floor(t / 60);
+  const r = t - m * 60;
+  return m > 0 ? `${m}:${r.toFixed(dec).padStart(dec ? dec + 3 : 2, '0')}` : r.toFixed(dec);
 }
 
 /** "+1.23", "+12.4", "+1:02.3", "+2L" */
-export function gapText(sec, laps, signed = true) {
+export function gapText(sec, laps, signed = true, dec = 'auto') {
   if (laps > 0) return `${signed ? '+' : ''}${laps}L`;
   if (sec == null) return '–';
   const sg = signed ? '+' : '';
   if (sec >= 60) {
     const m = Math.floor(sec / 60);
-    return `${sg}${m}:${(sec - m * 60).toFixed(1).padStart(4, '0')}`;
+    const d = dec === 'auto' ? 1 : dec;
+    return `${sg}${m}:${(sec - m * 60).toFixed(d).padStart(d ? d + 3 : 2, '0')}`;
   }
-  return sg + (sec < 10 ? sec.toFixed(2) : sec.toFixed(1));
+  return sg + sec.toFixed(dec === 'auto' ? (sec < 10 ? 2 : 1) : dec);
 }
 
 export function clock(sec) {
@@ -218,9 +222,9 @@ export const talkHtml = (on) => {
 // iRating chip, with the estimated gain/loss of this race next to it (green up / red down,
 // white dash for 0). Fixed-width parts so every chip is the same size: rating | arrow | gain,
 // the gain right-aligned. withGain: the race shows the gain part on every row, even without one.
-export function irHtml(ir, gain, withGain = gain != null) {
+export function irHtml(ir, gain, withGain = gain != null, fmt = 'k') {
   if (!ir) return '';
-  const v = (ir / 1000).toFixed(1) + 'k';   // always in k: 720 -> 0.7k
+  const v = fmt === 'k' ? (ir / 1000).toFixed(1) + 'k' : String(ir);   // in k by default: 720 -> 0.7k
   const g = !withGain ? '' : gain ? `<em class="${gain > 0 ? 'up' : 'down'}"><i>${gain > 0 ? '▲' : '▼'}</i>${Math.abs(gain)}</em>` : '<em><i>–</i>0</em>';
   return `<b><span>${v}</span>${g}</b>`;
 }
@@ -262,8 +266,9 @@ export function pitHtml(c, kind) {
 }
 
 // tyre in the RaceLab way: a little Michelin-style tyre, white sidewall marks dry, blue wet
-export function tyreHtml(tc) {
+export function tyreHtml(tc, text = false) {
   if (!tc) return '';
+  if (text) return `<span class="tyre-t ${tc}">${tc === 'wet' ? 'WET' : 'DRY'}</span>`;
   return `<svg class="tyre ${tc}" viewBox="0 0 20 20" aria-label="${tc === 'wet' ? 'Wet' : 'Dry'} tyres"><circle cx="10" cy="10" r="9" fill="#0b0b0c" stroke="#3a3a3e" stroke-width="1.5"/><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="6.4 3"/><circle cx="10" cy="10" r="2.6" fill="#2a2a2d"/></svg>`;
 }
 
@@ -283,15 +288,33 @@ export function flagFx(key, fl) {
 }
 
 // ---- preferences & units --------------------------------------------------
+// Kept in a file by the server: the app's browser storage dies with the window. The storage here only
+// carries a change to the other window, and is the starting point of what a browser saved before the file.
 const KEY = 'pitwall.prefs.v1';
+const onDisk = await fetch('/prefs').then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
 export const prefs = (() => {
-  let p = {};
-  try { p = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { /* ignore */ }
-  return Object.assign({ units: 'metric', standMode: 'class', classFilter: null, relRows: 3, zoom: 1.1, reserve: 0.5, targetLaps: 10, autoFuel: true }, p);
+  let p = onDisk;
+  if (!Object.keys(p).length) try { p = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { /* ignore */ }
+  return Object.assign({ units: 'metric', standMode: 'class', classFilter: null, relRows: 3, zoom: 1.1, reserve: 0.5, targetLaps: 10, autoFuel: true, classHead: classDefault(), standFoot: footDefault(), header: headerDefault() }, p, { stand: migrateStand(p.stand) });
 })();
+let saving = 0;
+function writePrefs() {
+  clearTimeout(saving); saving = 0;
+  fetch('/prefs', { method: 'PUT', body: JSON.stringify(prefs), headers: { 'Content-Type': 'application/json' }, keepalive: true }).catch(() => {});
+}
 export function savePrefs() {
   try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ }
+  clearTimeout(saving);
+  saving = setTimeout(writePrefs, 200);   // a drag saves many times
 }
+addEventListener('pagehide', () => { if (saving) writePrefs(); });
+
+// the other window saved (the board and the settings pop-up share the storage): 'prefs' tells this one
+addEventListener('storage', (e) => {
+  if (e.key !== KEY || !e.newValue) return;
+  try { Object.assign(prefs, JSON.parse(e.newValue)); } catch { return; }
+  dispatchEvent(new Event('prefs'));
+});
 
 const imp = () => prefs.units === 'imperial';
 export const fmt = {

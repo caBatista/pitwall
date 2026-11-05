@@ -46,7 +46,7 @@ def main():
                          start=args.mock_start, cam=cam, wide=args.mock_wide, out=args.mock_out) if args.mock else IRacingSource())
     mapper = TrackMapper(args.maps_dir, flip=args.flip_map)
     engine = Engine(mapper)
-    app = App(source, engine, hz=args.hz).build()
+    app = App(source, engine, hz=args.hz, prefs_path=Path(__file__).resolve().parent.parent / "settings.json").build()
 
     host = "0.0.0.0" if args.lan else "127.0.0.1"
     print(f"\n  PITWALL {__version__}  ·  source: {source.name}")

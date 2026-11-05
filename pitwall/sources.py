@@ -183,6 +183,10 @@ _CLASSES_WIDE = [   # --mock-wide: a bigger field, six classes
 
 class MockSource:
     name = "simulator"
+    # what the selector in the header can ask for: iRacing's SessionType and the session time to jump to,
+    # far enough in to have laps and gaps. over: into the cool down, the results.
+    SESSIONS = {"test": ("Offline Testing", 900.0), "practice": ("Practice", 900.0), "qualify": ("Open Qualify", 900.0),
+                "race": ("Race", 900.0), "over": ("Race", 3660.0), "out": ("Race", 900.0)}
 
     def __init__(self, speed: float = 4.0, seed: int = 11, session: str = "Race", track_id: int = 9999,
                  start: float = 0.0, cam=None, wide: bool = False, out: bool = False):
@@ -194,6 +198,7 @@ class MockSource:
         self.watch = None   # session time the replay is showing; None: live
         self.track_id = track_id   # a real TrackID makes the map come from maps/library
         self.session = session   # iRacing SessionType to pretend: Race / Open Qualify / Practice / Offline Testing
+        self.sub = 0   # a new SubSessionID for each session picked, so nothing carries over
         self._reset()
 
     # ---- construction ------------------------------------------------------
@@ -310,6 +315,14 @@ class MockSource:
             idx += 1
             grid += 1
 
+    def set_session(self, kind):
+        """Another session type, while running (the selector in the header)."""
+        if kind in self.SESSIONS:
+            self.session, self.start = self.SESSIONS[kind]
+            self.out = kind == "out"
+            self.sub += 1
+            self._reset()
+
     # ---- iRacing-like interface -------------------------------------------
     def pit_fuel(self, liters):
         self.sv_fuel = float(liters) or self.sv_fuel
@@ -356,7 +369,7 @@ class MockSource:
         drivers.append({"CarIdx": 63, "UserName": "Pace Car", "CarIsPaceCar": 1, "CarClassID": 0})
         return {
             "WeekendInfo": {
-                "TrackID": self.track_id, "TrackName": "pitwall test", "TrackDisplayName": "Pitwall Test Circuit",
+                "SubSessionID": self.sub, "TrackID": self.track_id, "TrackName": "pitwall test", "TrackDisplayName": "Pitwall Test Circuit",
                 "TrackConfigName": "Grand Prix", "TrackLength": "5.40 km", "TrackNumTurns": 16,
                 "Category": "SportsCar", "SeriesID": 0,
                 "WeekendOptions": {"IncidentLimit": 25, "IncidentWarningInitialLimit": 17, "IncidentWarningSubsequentLimit": 8},
@@ -495,8 +508,9 @@ class MockSource:
             flags = 0x8 | 0x4000
         if t >= self.race_len:
             flags = 0x1
+        cool = t >= self.race_len + 60
         raw = {
-            "SessionTime": t, "SessionNum": 0, "SessionState": 5 if t >= self.race_len else (3 if t < 8 else 4),
+            "SessionTime": t, "SessionNum": 0, "SessionState": 6 if cool else 5 if t >= self.race_len else (3 if t < 8 else 4),
             "SessionFlags": flags, "SessionTimeRemain": remain, "SessionLapsRemainEx": 32767,
             "SessionLapsTotal": 32767, "SessionTimeTotal": self.race_len,
             "SessionTimeOfDay": 12 * 3600 + t, "SessionInfoUpdate": 1, "PlayerCarIdx": 0,
@@ -523,5 +537,6 @@ class MockSource:
             "CarIdxOnPitRoad": pitr, "CarIdxPosition": pos, "CarIdxClassPosition": cpos,
             "CarIdxLastLapTime": last, "CarIdxBestLapTime": best,
             "CarIdxEstTime": est, "CarIdxTireCompound": [self.tyre] + [0] * (n - 1),
+            "CarIdxSessionFlags": [0x1 if cool else 0] * n,   # the checkered, everyone home by the cool down
         }
         return raw

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -52,8 +53,9 @@ async def no_cache(request, handler):
 
 
 class App:
-    def __init__(self, source, engine: Engine, hz: float = 20.0):
+    def __init__(self, source, engine: Engine, hz: float = 20.0, prefs_path: Path | None = None):
         self.source = source
+        self.prefs_path = prefs_path   # the user's settings; the mock and the sim share them
         self.engine = engine
         self.hz = hz
         self.clients: set[web.WebSocketResponse] = set()
@@ -99,11 +101,35 @@ class App:
                             self.source.replay_live()
                     elif data.get("cmd") == "focus":
                         self.focus(data.get("i"))
+                    elif data.get("cmd") == "mock_session":
+                        if self.source.name == "simulator":
+                            self.source.set_session(data.get("kind"))
                     elif data.get("cmd") == "chat":
                         await asyncio.to_thread(self.chat, data.get("i"), data.get("to"))
         finally:
             self.clients.discard(ws)
         return ws
+
+    # ---- the user's settings: a file, because the app's browser storage dies with the window ----
+    async def prefs_get(self, _):
+        try:
+            return web.json_response(json.loads(self.prefs_path.read_text("utf-8")))
+        except (AttributeError, OSError, ValueError):
+            return web.json_response({})
+
+    async def prefs_put(self, request):
+        try:
+            data = await request.json()
+        except ValueError:
+            data = None
+        if not isinstance(data, dict):
+            raise web.HTTPBadRequest()
+        if self.prefs_path:
+            tmp = self.prefs_path.with_suffix(".tmp")
+            self.prefs_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), "utf-8")
+            os.replace(tmp, self.prefs_path)   # a crash halfway never leaves half a file
+        return web.Response(status=204)
 
     # ---- pit commands from the fuel / weather cards -------------------------
     def set_auto_fuel(self, data):
@@ -229,6 +255,8 @@ class App:
 
         app.router.add_get("/", index)
         app.router.add_get("/ws", self.ws)
+        app.router.add_get("/prefs", self.prefs_get)
+        app.router.add_put("/prefs", self.prefs_put)
         app.router.add_static("/", WEB_DIR, show_index=False)
 
         async def start(app_):

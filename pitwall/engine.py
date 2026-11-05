@@ -478,7 +478,7 @@ class Engine:
             self._inc_line = inc
 
         def push(i, lt, x):
-            h = self._laps.setdefault(i, deque(maxlen=3))
+            h = self._laps.setdefault(i, deque(maxlen=5))   # the Standings can compare up to 5
             if i == pme and inc is not None:
                 x = x or (self._inc_line is not None and inc > self._inc_line)
                 self._inc_line = inc

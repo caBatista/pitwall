@@ -12,6 +12,12 @@
       "runtimeExecutable": ".venv/Scripts/python.exe",
       "runtimeArgs": ["-u", "-m", "pitwall", "--mock"],
       "port": 8765
+    },
+    {
+      "name": "pitwall-mock-over",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-u", "-m", "pitwall", "--mock", "--mock-start", "3590", "--port", "8766"],
+      "port": 8766
     }
   ]
 }

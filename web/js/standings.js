@@ -1,5 +1,6 @@
-import { esc, lapTime, gapText, prefs, savePrefs, flagHtml, makeHtml, stHtml, talkHtml, tyreHtml, HELMET, OUT, flagFx, irHtml, pitHtml, ST, fitIr, irKeyOf, INV, patchRows } from './util.js';
+import { esc, fmt, lapTime, gapText, prefs, savePrefs, flagHtml, makeHtml, talkHtml, tyreHtml, HELMET, OUT, flagFx, irHtml, pitHtml, ST, fitIr, irKeyOf, INV, patchRows } from './util.js';
 import { driverActions } from './drivers.js';
+import { CLASS_HEAD, FOOT, STAND, colName, driverName, footFit, optOf, shownIn, standCols, standFit, standGrid, standHead, standNeed, viewSession } from './columns.js';
 
 const ROW = 30, ME = 44;   // .rrow / .rrow.me with its margins, px in the panel's scale
 
@@ -40,6 +41,61 @@ function visibleRows(rows, ref, drivers, room, from) {
   return { list: list.filter((r, k) => r.i != null || r.key === 'none' || list[k + 1]?.i != null), start, max, slots, free: others.length };
 }
 
+// one cell of a row; x: what the row already worked out, o: the options of each column (see options())
+const delta = (c, k, x) => {   // their k-th latest lap minus my k-th latest: + they are slower, - they are faster
+  if (x.me || c.lh?.[k] == null || x.myLaps[k] == null) return ['dl', ''];
+  const k10 = 10 ** x.o.deltaDec, v = Math.round((c.lh[k] - x.myLaps[k]) * k10) / k10;
+  return [`dl ${v > 0 ? 'slower' : v < 0 ? 'faster' : ''}`, `${v > 0 ? '+' : ''}${v.toFixed(x.o.deltaDec)}`];
+};
+const PENALTY = new Set(['dq', 'black', 'repair', 'warn']);
+function statusHtml(c, off) {
+  if (ST[c.fl] && !(PENALTY.has(c.fl) && off.has('pen'))) return ST[c.fl];
+  if (c.pit && !off.has('pit')) return ST.pit;
+  return c.cb && !off.has('fast') ? ST.fast : '';
+}
+const CELL = {
+  pos: (c, x) => ['rpos', x.pos],
+  num: (c, x) => [x.o.numFree ? 'rcar free' : 'rcar', `<span class="rn">${esc(x.d.num)}</span>`, `--cc:${x.color}`],
+  pg: (c, x) => ['pgc', x.pg],
+  make: (c, x) => ['mk', makeHtml(x.d.make)],
+  flag: (c, x) => ['fc', flagHtml(x.d.country)],
+  name: (c, x) => ['rname', `<span class="nm">${esc(x.o.name(x.d))}</span>${x.over ? '' : (c.out && x.o.out ? OUT : '') + (x.o.pit ? pitHtml(c, x.kind) : '')}`],
+  sr: (c, x) => ['sr', x.lic ? `<b>${esc((x.sr || '').slice(0, 3))}</b><i>${esc(x.lic)}</i>` : '', `--lc:${x.d.licColor}`],
+  ir: (c, x) => ['irb', irHtml(x.d.ir, c.irg, x.isRace && x.o.gain, x.o.irFmt)],
+  tyre: (c, x) => ['c', tyreHtml(c.tc, x.o.tyreText)],
+  int: (c, x) => ['t dim', x.int],
+  gap: (c, x) => [`t ${x.leader ? 'dim' : ''}`, x.gap],
+  last: (c, x) => [`t ${c.pb ? 'pb' : ''}`, c.last ? lapTime(c.last, x.o.lastDec) + (c.lastx ? INV : '') : x.o.lastNone],
+  best: (c, x) => [`t ${c.cb ? 'cb' : ''}`, c.best ? lapTime(c.best, x.o.bestDec) : x.o.bestNone],
+  d1: (c, x) => delta(c, 0, x),
+  d2: (c, x) => delta(c, 1, x),
+  d3: (c, x) => delta(c, 2, x),
+  d4: (c, x) => delta(c, 3, x),
+  d5: (c, x) => delta(c, 4, x),
+  status: (c, x) => (x.over ? ['sflag', c.fin && !x.o.off.has('fin') ? ST.fin : '']
+    : ['sflag', `${talkHtml(x.talk === c.i)}<span class="fxw" style="${flagFx('s' + c.i, c.fl)}">${statusHtml(c, x.o.off)}</span>`]),
+};
+const noTime = (dec) => `-:--${dec ? '.' + '-'.repeat(dec) : ''}`;
+
+/** The choices of the user, looked up once, not for every row 20 times a second. */
+function options(cfg, session) {
+  const on = (k) => shownIn(cfg, STAND, session).includes(k), opt = (k, n) => optOf(cfg, STAND, k, n);
+  const lastDec = opt('last', 'dec'), bestDec = opt('best', 'dec');
+  const format = opt('name', 'format'), keep = opt('name', 'number'), names = new Map();   // written once for each driver
+  const name = (d) => {
+    if (!names.has(d.i)) names.set(d.i, driverName(keep ? d.user || d.name : d.name, format, keep));
+    return names.get(d.i);
+  };
+  return {
+    name,
+    out: on('out'), pit: on('pit'), gain: opt('ir', 'gain'), irFmt: opt('ir', 'fmt'), tyreText: opt('tyre', 'show') === 'text',
+    intDec: opt('int', 'dec'), gapDec: opt('gap', 'dec'), lastDec, bestDec, deltaDec: opt('delta', 'dec'),
+    lastNone: noTime(lastDec), bestNone: noTime(bestDec), off: new Set(opt('status', 'off')),
+  };
+}
+
+const kFmt = (v) => (v / 1000).toFixed(1) + 'k';
+
 /**
  * Standings. Multiclass-aware: by default cars are grouped per class (each with
  * its own class position and gaps to the class leader), or you can flip to a
@@ -47,6 +103,7 @@ function visibleRows(rows, ref, drivers, room, from) {
  * Rows share the relative's look (slanted pos / class # blocks, Montserrat, chips);
  * columns: pos | # make | country | name [OUT] | SR | iR | tyre | int | gap | last |
  * fastest | Δ1 Δ2 Δ3 (their latest laps minus mine, newest first) | flag.
+ * Which ones and in what order is the user's choice (columns.js, Settings).
  */
 export const standings = {
   id: 'w-standings',
@@ -72,9 +129,10 @@ export const standings = {
       }
     });
     driverActions(root, S);
+    addEventListener('prefs', () => { this.layoutKey = ''; });
     this.lastCtl = '';
     // how many rows fit depends on the panel, not on the data: measured only when it resizes
-    new ResizeObserver(() => { this.room = this.body.clientHeight; S.invalidate(); }).observe(this.body);
+    new ResizeObserver(() => { this.room = this.body.clientHeight; this.wide = this.body.clientWidth; S.invalidate(); }).observe(this.body);
     this.from = this.max = this.wheel = 0;
     const scroll = (n) => {
       const from = Math.max(0, Math.min(this.max, this.from + n));
@@ -120,15 +178,34 @@ export const standings = {
 
     const myCar = st.cars.find((c) => c.i === st.me.i) || {};
     const myLaps = myCar.lh || [];
-    // their k-th latest lap minus my k-th latest: + they are slower, - they are faster
-    const delta = (c, k) => {
-      if (c.i === st.me.i || c.lh?.[k] == null || myLaps[k] == null) return ['dl', ''];
-      const v = Math.round((c.lh[k] - myLaps[k]) * 10) / 10;
-      return [`dl ${v > 0 ? 'slower' : v < 0 ? 'faster' : ''}`, `${v > 0 ? '+' : ''}${v.toFixed(1)}`];
-    };
 
     // race over: the results, nothing live - no tags but the chequered flag (finished), no tyre / int / gap / last / delta
     const over = !!st.session?.over;
+    const session = viewSession(kind, over, !st.session.inCar);
+    // worked out when something changes (the session, the panel, a setting), not on every frame
+    const layoutKey = `${session}|${this.wide}|${innerWidth < 800}`;
+    if (layoutKey !== this.layoutKey) {
+      this.layoutKey = layoutKey;
+      const want = standCols(prefs.stand, session);
+      const fit = standFit(want, prefs.stand, over, innerWidth < 800 ? 0 : this.wide);   // a phone scrolls sideways instead
+      this.cols = fit.cols;
+      this.o = options(prefs.stand, session);
+      const at = fit.cols.indexOf('num');
+      this.o.numFree = at >= 0 && fit.cols[at - 1] !== 'pos';
+      this.body.parentElement.style.setProperty('--scols', standGrid(fit.cols, prefs.stand, over));   // not on body: its style is rewritten below
+      const { lead, titles } = standHead(fit.cols);
+      this.lead = lead;
+      this.heads = titles.map((t) => `<div class="${t.a}"${t.span > 1 ? ` style="grid-column:span ${t.span}"` : ''}>${t.title}</div>`).join('');
+      this.classItems = shownIn(prefs.classHead, CLASS_HEAD, session);
+      const foot = footFit(shownIn(prefs.standFoot, FOOT, session), this.meBar.clientWidth);
+      this.foot = foot.items;
+      this.lastBar = null;
+      try {
+        localStorage.setItem('pitwall.fit', JSON.stringify({ session, room: this.wide, need: standNeed(want, prefs.stand, over),
+          cols: fit.dropped.map(colName), foot: foot.dropped.map((k) => FOOT[k].label) }));
+      } catch { /* ignore */ }
+    }
+    const cols = this.cols, o = this.o;
     const rowHtml = (c, inGroup) => {
       const d = S.drivers[c.i];
       const cls = S.classMap.get(d.cls) || { color: '#8b95a7' };
@@ -138,59 +215,46 @@ export const standings = {
       const gi = inGroup ? c.gi : c.gio, li = inGroup ? c.li : c.lio;
       const leader = pos === 1;
       // always behind, so no '+': unsigned gaps
-      const gapTxt = leader ? (isRace ? 'Leader' : '') : gapText(gl, ld, false);
-      const intTxt = leader ? '' : gapText(gi, li, false);
+      const gapTxt = leader ? (isRace ? 'Leader' : '') : gapText(gl, ld, false, o.gapDec);
+      const intTxt = leader ? '' : gapText(gi, li, false, o.intDec);
       const off = c.srf < 0;
       const [lic, sr] = (d.lic || '').split(' ');
       const gain = isRace ? (inGroup ? c.pgc : c.pg) : null;   // positions gained since the start
       const pg = gain ? `<span class="pg ${gain > 0 ? 'up' : 'down'}">${gain > 0 ? '▲' : '▼'}${Math.abs(gain)}</span>` : (isRace ? '<span class="pg"></span>' : '');
-      const cells = [
-        ['rpos', pos],
-        ['rcar', `<span class="rn">${esc(d.num)}</span>${pg}<span class="mk">${makeHtml(d.make)}</span>`, `--cc:${cls.color}`],
-        ['fc', flagHtml(d.country)],
-        ['rname', `<span class="nm">${esc(d.name)}</span>${over ? '' : (c.out ? OUT : '') + pitHtml(c, st.session?.kind)}`],
-        ['sr', lic ? `<b>${esc((sr || '').slice(0, 3))}</b><i>${esc(lic)}</i>` : '', `--lc:${d.licColor}`],
-        ['irb', irHtml(d.ir, c.irg, isRace)],
-      ];
-      const best = [`t ${c.cb ? 'cb' : ''}`, c.best ? lapTime(c.best) : '-:--.---'];
-      if (over) cells.push(best, ['sflag', c.fin ? ST.fin : '']);
-      else cells.push(
-        ['c', tyreHtml(c.tc)],
-        ['t dim', intTxt],
-        [`t ${leader ? 'dim' : ''}`, gapTxt],
-        [`t ${c.pb ? 'pb' : ''}`, c.last ? lapTime(c.last) + (c.lastx ? INV : '') : '-:--.---'],
-        best,
-        delta(c, 0), delta(c, 1), delta(c, 2),
-        ['sflag', `${talkHtml(st.talk === c.i)}<span class="fxw" style="${flagFx('s' + c.i, c.fl)}">${stHtml(c, true)}</span>`],
-      );
+      const x = { d, color: cls.color, me, pos, pg, lic, sr, leader, gap: gapTxt, int: intTxt, over, kind, isRace, myLaps, talk: st.talk, o };
+      const cells = cols.map((k) => CELL[k](c, x));
       return { key: c.i, i: c.i, cls: `rrow srow ${over ? 'over' : ''} ${me ? 'me' : ''} ${!over && (off || c.pit) ? 'pitrow' : ''}`, cells };
     };
 
     // class header = title row: class, drivers and SOF over pos..iR, then the column titles
-    const head = (key, name, color, n, sof) => ({ key, cls: `ghead srow${over ? ' over' : ''}`, style: `--cc:${color}`, html: `
-        <div class="gl">${esc(name)}<span class="gn" title="Drivers">${HELMET}${n}</span>${sof ? `<span class="gn">SOF ${sof}</span>` : ''}</div>
-        ${over ? '<div class="r">Fastest</div><div class="c">Flag</div>' : `<div class="c">Tyre</div><div class="r">Int</div><div class="r">Gap</div><div class="r">Last</div><div class="r">Fastest</div>
-        <div class="c dhead">Delta</div><div class="c">Flag</div>`}` });
+    const headItem = (k, n, sof, laps) => {
+      if (k === 'drivers') return `<span class="gn" title="Drivers">${optOf(prefs.classHead, CLASS_HEAD, k, 'show') === 'icon' ? HELMET + n : `${n} drivers`}</span>`;
+      if (k === 'sof') return sof ? `<span class="gn">SOF ${optOf(prefs.classHead, CLASS_HEAD, k, 'fmt') === 'k' ? kFmt(sof) : sof}</span>` : '';
+      return laps ? `<span class="gn">Lap ${laps}</span>` : '';
+    };
+    const head = (key, name, color, n, sof, laps) => ({ key, cls: `ghead srow${over ? ' over' : ''}`, style: `--cc:${color}`, html: `
+        <div class="gl" style="grid-column:1 / span ${this.lead}">${esc(name)}${this.classItems.map((k) => headItem(k, n, sof, laps)).join('')}</div>
+        ${this.heads}` });
 
     const rows = [];
     if (grouped) {
       for (const cl of S.classes) {
         const list = byCls.get(cl.id);
         if (!list || !list.length) continue;
-        rows.push(head('h' + cl.id, cl.name, cl.color, cl.n, cl.sof));
+        rows.push(head('h' + cl.id, cl.name, cl.color, cl.n, cl.sof, list[0].lap));
         for (const c of list) rows.push(rowHtml(c, true));
       }
     } else {
       const all = [...byCls.values()].flat().sort((a, b) => (a.p ?? 999) - (b.p ?? 999));
-      rows.push(head('all', 'Overall', 'var(--accent)', all.length, null));
+      rows.push(head('all', 'Overall', 'var(--accent)', all.length, null, all[0]?.lap));
       for (const c of all) rows.push(rowHtml(c, false));
     }
     if (!rows.length) rows.push({ key: 'none', cls: 'map-note', html: '<b>No cars yet</b>Cars appear here as soon as they are on track.' });
     // the chips are as wide as the widest in the whole field, hidden rows included: measure with them all
     const irKey = irKeyOf(S, st.cars);
-    if (irKey !== this.irKey) {
+    if (irKey + o.irFmt + o.gain !== this.irKey && cols.includes('ir')) {
       patchRows(this.body, rows);
-      if (fitIr(this.body, irKey)) this.irKey = irKey;
+      if (fitIr(this.body, irKey + o.irFmt + o.gain)) this.irKey = irKey + o.irFmt + o.gain;
     }
     const v = visibleRows(rows, st.me.i, S.drivers, this.room, this.from);
     this.from = v.start; this.max = v.max;
@@ -209,15 +273,22 @@ export const standings = {
       const toGo = limits.length ? Math.min(...limits) - inc : null;
       const incCls = toGo == null ? '' : toGo <= 4 ? 'neg' : toGo <= 8 ? 'warn' : toGo <= 12 ? '' : 'pos';
       const incMax = [pen, m.incDq].filter((x) => x != null).map((x) => `/${x}x`).join('');   // the limits, smaller and never coloured
-      const g = m.irGain;
-      const bar = `
-        <div class="kv"><small>Position</small><b>${mc.cp != null ? `P${mc.cp}` : '–'}${multi && mc.p != null ? `<span class="of">P${mc.p}</span>` : ''}</b></div>
-        <div class="kv"><small>Lap</small><b>${m.lap ?? '–'}${isRace && !over && st.session.raceLaps ? `<span class="of">/${st.session.raceLaps}${st.session.raceLapsEst ? '*' : ''}</span>` : ''}</b></div>
-        ${over ? '' : `<div class="kv"><small>Last</small><b>${lapTime(m.last)}${m.lastx && m.last ? INV : ''}</b></div>`}
-        <div class="kv"><small>Best</small><b>${lapTime(m.best)}</b></div>
-` + (st.session?.kind === 'practice' ? '' : `
-        <div class="kv"><small>iRating</small><b class="${g == null ? '' : g >= 0 ? 'pos' : 'neg'}">${g == null ? '–' : (g > 0 ? '+' : '') + g}</b></div>
-        <div class="kv"><small>Incidents</small><b><span class="${incCls}">${inc == null ? '–' : inc + 'x'}</span>${inc != null && incMax ? `<span class="of">${incMax}</span>` : ''}</b></div>`);   // practice: nothing at stake
+      const g = m.irGain, cf = prefs.standFoot, fo = (k, n) => optOf(cf, FOOT, k, n);
+      const kv = (k, title, html) => `<div class="kv k-${k}"><small>${title}</small><b>${html}</b></div>`;
+      const ITEM = {
+        pos: () => kv('pos', 'Position', `${mc.cp != null ? `P${mc.cp}` : '–'}${multi && mc.p != null && fo('pos', 'overall') ? `<span class="of">P${mc.p}</span>` : ''}`),
+        lap: () => kv('lap', 'Lap', `${m.lap ?? '–'}${isRace && !over && st.session.raceLaps && fo('lap', 'total') ? `<span class="of">/${st.session.raceLaps}${st.session.raceLapsEst ? '*' : ''}</span>` : ''}`),
+        last: () => kv('last', 'Last', `${lapTime(m.last, fo('last', 'dec'))}${m.lastx && m.last ? INV : ''}`),
+        best: () => kv('best', 'Best', lapTime(m.best, fo('best', 'dec'))),
+        ir: () => `<div class="kv k-ir"><small>iRating</small><b class="${g == null ? '' : g >= 0 ? 'pos' : 'neg'}">${g == null ? '–' : (g > 0 ? '+' : '') + g}</b></div>`,
+        inc: () => kv('inc', 'Incidents', `<span class="${incCls}">${inc == null ? '–' : inc + 'x'}</span>${inc != null && incMax && fo('inc', 'limits') ? `<span class="of">${incMax}</span>` : ''}`),
+        cur: () => kv('cur', 'Current', lapTime(m.cur, fo('cur', 'dec'))),
+        delta: () => `<div class="kv k-delta"><small>Delta</small><b class="${!m.deltaOk ? '' : m.delta <= 0 ? 'pos' : 'neg'}">${m.deltaOk ? (m.delta > 0 ? '+' : '') + m.delta.toFixed(2) : '–'}</b></div>`,
+        fuel: () => kv('fuel', 'Fuel', st.fuel?.level != null ? `${fmt.vol(st.fuel.level).toFixed(1)}<span class="of">${fmt.volU()}</span>` : '–'),
+        track: () => kv('track', 'Track', st.wx?.track != null ? `${fmt.temp(st.wx.track).toFixed(1)}<span class="of">${fmt.tempU()}</span>` : '–'),
+        air: () => kv('air', 'Air', st.wx?.air != null ? `${fmt.temp(st.wx.air).toFixed(1)}<span class="of">${fmt.tempU()}</span>` : '–'),
+      };
+      const bar = this.foot.map((k) => ITEM[k]()).join('');
       if (bar !== this.lastBar) { this.meBar.innerHTML = bar; this.lastBar = bar; }
     }
   },

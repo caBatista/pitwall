@@ -13,3 +13,4 @@ build/
 dist/
 *.spec
 window.json
+settings.json

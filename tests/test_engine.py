@@ -401,3 +401,44 @@ def test_a_tow_is_not_taken_for_a_crossing_for_long(engine):
     engine.lap_fix(1, 5, 0.9, 10.0)
     assert engine.lap_fix(1, 5, 0.1, 10.1) == 1
     assert engine.lap_fix(1, 5, 0.1, 13.0) == 0
+
+
+def test_settings_survive_on_disk(tmp_path):
+    import asyncio
+    from aiohttp.test_utils import TestClient, TestServer
+    from pitwall.server import App
+    from pitwall.sources import MockSource
+    from pitwall.trackmap import TrackMapper
+
+    path = tmp_path / "sub" / "settings.json"
+
+    async def go():
+        app = App(MockSource(), Engine(TrackMapper(tmp_path)), prefs_path=path).build()
+        app.on_startup.clear()   # no need for the 20 Hz loop
+        app.on_cleanup.clear()
+        async with TestClient(TestServer(app)) as c:
+            assert await (await c.get("/prefs")).json() == {}
+            assert (await c.put("/prefs", json={"zoom": 1.2, "stand": {"deltas": 1}})).status == 204
+            assert (await (await c.get("/prefs")).json())["stand"]["deltas"] == 1
+            assert (await c.put("/prefs", data="[1]")).status == 400
+            path.write_text("{ broken")
+            assert await (await c.get("/prefs")).json() == {}
+
+    asyncio.run(go())
+
+
+def test_the_mock_changes_session_while_running():
+    from pitwall.sources import MockSource
+    m = MockSource()
+    m.set_session("over")
+    r = m.poll()
+    assert r["SessionState"] == 6 and m.session_info(r)["SessionInfo"]["Sessions"][0]["SessionType"] == "Race"
+    m.set_session("nonsense")
+    assert m.sub == 1
+    m.set_session("out")
+    assert not m.poll()["IsOnTrack"]
+    m.set_session("over")
+    assert m.poll()["IsOnTrack"]
+    m.sub = 1
+    m.set_session("qualify")
+    assert m.poll()["SessionState"] == 4 and m.session_info(None)["WeekendInfo"]["SubSessionID"] == 2
