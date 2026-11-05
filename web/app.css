@@ -484,6 +484,10 @@ sup.inv { color: var(--accent); font-size: .8em; line-height: 0; margin-left: 1p
 .ctx button:hover { background: var(--accent); color: var(--ink, #111112); }
 
 /* ---------- race events ---------- */
+.ev-past { max-width: 62%; padding: 3px 7px; border: 1px solid var(--line-2); border-radius: 7px; background: var(--bg-2); color: var(--dim); font: 500 11px var(--mono); }
+.ev-past option { background: var(--card); color: var(--txt); }
+#w-events.past .ev-who { display: none; }
+#w-events.past .ev { cursor: default; }
 .ev-kinds { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 14px 8px; }
 .ev-who { margin-right: 6px; }
 .ev-kinds button {

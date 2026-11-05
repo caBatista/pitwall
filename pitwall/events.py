@@ -16,6 +16,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import time
+from pathlib import Path
 from types import SimpleNamespace
 
 MAX_EVENTS = 6000
@@ -42,16 +45,70 @@ RED = 0x10
 ON_TRACK, OFF_TRACK = 3, 0
 
 
+KEEP_DAYS = 30
+
+
+def history(folder):
+    """The races on disk, newest first, with what it takes to choose one."""
+    out = []
+    for path in Path(folder).glob("*.json"):
+        try:
+            d = json.loads(path.read_text("utf-8"))
+        except (OSError, ValueError):
+            continue
+        items, player = d.get("items") or [], d.get("player")
+        done = [e for e in items if e.get("k") == "finish" and e.get("i") == player]
+        meta = d.get("meta") or {}
+        out.append({"key": path.stem, "saved": d.get("saved"), "track": meta.get("track"), "config": meta.get("config"),
+                    "seriesId": meta.get("seriesId"), "n": len(items), "p": done[-1].get("p") if done else None,
+                    "race": any(e.get("sk") == "race" for e in items)})
+    return sorted(out, key=lambda x: x["saved"] or 0, reverse=True)
+
+
+def past_race(folder, key):
+    """One race. key comes from outside: only a plain name reaches the disk."""
+    if not re.fullmatch(r"[\w-]+", key or ""):
+        return None
+    try:
+        return json.loads((Path(folder) / f"{key}.json").read_text("utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def purge(folder, days=KEEP_DAYS):
+    """Races older than this go. Returns how many."""
+    limit, gone = time.time() - days * 86400, 0
+    for path in Path(folder).glob("*.json"):
+        try:
+            if path.stat().st_mtime < limit:
+                path.unlink()
+                gone += 1
+        except OSError:
+            pass
+    return gone
+
+
+def note(folder, text):
+    """The app has no console: what happens to the files stays written next to them."""
+    try:
+        Path(folder).mkdir(parents=True, exist_ok=True)
+        with open(Path(folder) / "save.log", "a", encoding="utf-8") as fh:
+            fh.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {text}\n")
+    except OSError:
+        pass
+
+
 class EventLog:
     def __init__(self):
+        self.dir = None   # where races are kept; None: nothing is read back
         self.sub = None
+        self._began = 0
         self.items, self.new, self.by_id = [], [], {}
         self.cleared = False   # the list went away (another event): clients start over
         self.failed = False    # feed raised once: told in the log
         self.ver = 0
         self._next = 0
         self._seen = {}   # what is listed, for a replay seen twice
-        self._saved = None   # what load() found, until the sub-session is known
         self._f = None
         self._new_session(None, None)
 
@@ -107,19 +164,19 @@ class EventLog:
             del self.by_id[self.items.pop(0)["id"]]
         return e
 
-    def save(self, path):
-        """Kept on disk so that restarting the app mid-event doesn't lose the list."""
+    def key(self):
+        """The name of this race's file. Offline sessions all have sub-session 0: each gets its own."""
+        return str(self.sub) if self.sub else f"offline-{self._began}"
+
+    def save(self, folder, info=None):
+        """One file per race: the list survives restarting the app, and stays to be read later."""
+        path = Path(folder) / f"{self.key()}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
         tmp = f"{path}.tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump({"sub": self.sub, "items": self.items}, fh, default=str)
+            json.dump({"sub": self.sub, "saved": time.time(), **(info or {}), "items": self.items}, fh, default=str)
         os.replace(tmp, path)
-
-    def load(self, path):
-        try:
-            with open(path, encoding="utf-8") as fh:
-                self._saved = json.load(fh)
-        except (OSError, ValueError):
-            self._saved = None
+        return path
 
     def _restore(self, items):
         self.items = items[-MAX_EVENTS:]
@@ -145,8 +202,9 @@ class EventLog:
             self.sub = f.sub
             self.items, self.new, self.by_id = [], [], {}
             self._seen = {}
-            saved, self._saved = self._saved, None
-            if saved and saved.get("sub") == f.sub:
+            self._began = int(time.time())
+            saved = past_race(self.dir, str(f.sub)) if self.dir and f.sub else None
+            if saved:
                 self._restore(saved.get("items") or [])
             self.cleared = True
             self.ver += 1

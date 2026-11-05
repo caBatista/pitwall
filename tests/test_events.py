@@ -1,8 +1,12 @@
 """Race Events: o que vira evento, o que nao vira e o momento certo no replay."""
+import json
+import os
+import time
+
 from conftest import frame, session
 from types import SimpleNamespace
 
-from pitwall.events import REPLAY_LEAD, EventLog
+from pitwall.events import REPLAY_LEAD, EventLog, history, past_race, purge
 
 
 def setup(engine, drivers=(0, 1, 2), kind="Race", **extra):
@@ -316,12 +320,12 @@ def test_the_list_survives_a_restart(engine, tmp_path):
     run(engine, 100, 103, lambda t: racing({0: (5, .50), 1: (5, .49)}, t))
     run(engine, 103, 115, lambda t: racing({0: (5, .50), 1: (5, .49 if t < 104 else .51)}, t))
     assert kinds(engine, "pass")
-    path = tmp_path / "events.json"
-    engine.ev.save(path)
+    engine.ev.sub = sub = 777
+    engine.ev._f = SimpleNamespace(**{**vars(engine.ev._f), "sub": sub})
+    engine.ev.save(tmp_path)
 
     other = EventLog()
-    other.load(path)
-    sub = engine.ev.sub
+    other.dir = tmp_path
     other.feed(SimpleNamespace(**{**vars(engine.ev._f), "sub": sub}))
     assert [e["id"] for e in other.items] == [e["id"] for e in engine.ev.items] and other.cleared
     e = kinds(engine, "pass")[0]
@@ -331,7 +335,7 @@ def test_the_list_survives_a_restart(engine, tmp_path):
     assert other.replay_target(other.items[0]["id"])
 
     third = EventLog()
-    third.load(path)
+    third.dir = tmp_path
     third.feed(SimpleNamespace(**{**vars(engine.ev._f), "sub": "outra"}))
     assert not third.items
 
@@ -452,3 +456,91 @@ def test_the_winner_is_first_even_with_the_counter_a_lap_short(engine):
         return flagged({0: (9 if t < 6 else 10, .9999 if t < 6 else .01), 1: (9, .95), 2: (9 if t < 8 else 10, .99 if t < 8 else .01)}, t, 5, CarIdxPosition=[1, 2, 3] + [0] * 61)
     run(engine, 0, 10, make)
     assert [(e["i"], e["p"]) for e in log.items if e["k"] == "finish"] == [(0, 1), (2, 2)]
+
+
+def seen_in_replay(place, t, **over):
+    return racing(place, t, IsReplayPlaying=True, ReplayFrameNumEnd=6000, IsOnTrack=False, **over)
+
+
+def test_the_board_stays_in_the_present_during_a_replay(engine):
+    setup(engine)
+    run(engine, 100, 110, lambda t: racing({0: (9, .50), 1: (9, .49)}, t))
+    st = engine.update(seen_in_replay({0: (2, .10), 1: (2, .20)}, 40.0))
+    assert st["session"]["kind"] == "race" and st["session"]["behind"] == 100
+    assert next(c for c in st["cars"] if c["i"] == 0)["lap"] != 3   # a volta de agora, nao a do replay
+    back = engine.update(racing({0: (9, .60), 1: (9, .59)}, 111))
+    assert back["session"]["behind"] == 0
+
+
+def test_another_session_in_the_replay_does_not_change_the_board(engine):
+    setup(engine, kind="Race")
+    run(engine, 100, 105, lambda t: racing({0: (9, .50), 1: (9, .49)}, t))
+    st = engine.update(seen_in_replay({0: (1, .10), 1: (1, .20)}, 40.0, SessionNum=7))
+    assert st["session"]["kind"] == "race"
+
+
+def test_the_replay_still_feeds_the_events(engine):
+    setup(engine)
+    run(engine, 100, 105, lambda t: racing({0: (9, .50), 1: (9, .49)}, t))
+    run(engine, 40, 60, lambda t: seen_in_replay({0: (3, .50), 1: (3, .49 if t < 45 else .51)}, t, ReplaySessionTime=t, ReplaySessionNum=0))
+    assert [(e["i"], e["j"]) for e in kinds(engine, "pass")] == [(1, 0)]
+
+
+def test_a_replay_records_nothing_on_the_board_engine(engine):
+    setup(engine)
+    run(engine, 100, 105, lambda t: racing({0: (9, .50), 1: (9, .49)}, t))
+    calls = []
+    engine.mapper.update = lambda *a: calls.append(a)
+    run(engine, 40, 42, lambda t: seen_in_replay({0: (3, .50), 1: (3, .49)}, t))
+    assert not calls
+
+
+def test_positions_keep_coming_from_the_results_during_a_replay(engine):
+    setup(engine)
+    run(engine, 100, 105, lambda t: racing({0: (9, .50), 1: (9, .49)}, t))
+    info = dict(engine._info)
+    info["SessionInfo"] = {"Sessions": [{**engine.sessions[0], "ResultsPositions": [
+        {"CarIdx": 1, "Position": 1, "ClassPosition": 0, "FastestTime": 90.5, "LastTime": 91.0},
+        {"CarIdx": 0, "Position": 2, "ClassPosition": 1, "FastestTime": 90.9, "LastTime": 92.0}]}]}
+    engine.set_session(info)
+    st = engine.update(seen_in_replay({0: (3, .50), 1: (3, .49)}, 40.0))
+    assert [c["i"] for c in st["cars"]][:2] == [1, 0] and st["cars"][0]["best"] == 90.5 and st["cars"][0]["cp"] == 1
+
+
+def race_file(folder, key, saved, **extra):
+    (folder / f"{key}.json").write_text(json.dumps({"saved": saved, "items": [], "meta": {"track": "Spa"}, **extra}), "utf-8")
+
+
+def test_each_race_keeps_its_own_file_and_the_list_shows_them(engine, tmp_path):
+    race_file(tmp_path, "111", 100.0, player=5, items=[{"k": "finish", "i": 5, "p": 3, "sk": "race"}])
+    race_file(tmp_path, "222", 200.0)
+    (tmp_path / "broken.json").write_text("{", "utf-8")
+    h = history(tmp_path)
+    assert [r["key"] for r in h] == ["222", "111"]
+    assert h[1]["p"] == 3 and h[1]["track"] == "Spa" and h[1]["race"]
+
+
+def test_old_races_go_after_30_days(tmp_path):
+    race_file(tmp_path, "old", 1.0)
+    race_file(tmp_path, "new", 2.0)
+    old = time.time() - 31 * 86400
+    os.utime(tmp_path / "old.json", (old, old))
+    assert purge(tmp_path) == 1
+    assert [p.stem for p in tmp_path.glob("*.json")] == ["new"]
+
+
+def test_a_name_from_outside_never_leaves_the_folder(tmp_path):
+    race_file(tmp_path, "ok", 1.0)
+    assert past_race(tmp_path, "ok")["saved"] == 1.0
+    assert past_race(tmp_path, "../ok") is None and past_race(tmp_path, "") is None
+
+
+def test_offline_sessions_do_not_share_a_file(engine, tmp_path):
+    log = EventLog()
+    log.sub, log._began = 0, 123
+    log.items = [{"id": 0}]
+    assert log.save(tmp_path, {"player": 1}).name == "offline-123.json"
+    log._began = 124
+    assert log.save(tmp_path).name == "offline-124.json"
+    log.sub = 999
+    assert log.key() == "999"
