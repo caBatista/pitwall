@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 import re
+import time
 from collections import deque
 from statistics import median
 from types import SimpleNamespace
@@ -265,6 +266,22 @@ class FuelTracker:
         return sum(recent) / len(recent) if recent else None
 
 
+class _ReadOnlyMapper:
+    """The track map as the replay's engine sees it: a replay must not record or recalibrate anything."""
+
+    def __init__(self, mapper):
+        self._mapper = mapper
+
+    def __getattr__(self, name):
+        return getattr(self._mapper, name)
+
+    def set_track(self, *a, **k):
+        pass
+
+    def update(self, *a, **k):
+        pass
+
+
 class Engine:
     def __init__(self, mapper: TrackMapper):
         self.mapper = mapper
@@ -280,6 +297,9 @@ class Engine:
         self.fuel = FuelTracker()
         self.ev = EventLog()
         self.in_car = False
+        self._info = None     # the session info, for the replay's engine
+        self._live, self._live_at = None, 0.0   # the last frame that was the present
+        self._replay = None   # the engine that reads the replay, see update()
         self.wx_hist = deque(maxlen=720)  # 5 s samples = 1 hour
         self._wx_t = -1e9
         self._prev_t = None
@@ -313,7 +333,15 @@ class Engine:
         self._my_lapc = None
 
     # ---- session info ------------------------------------------------------
+    def event_info(self):
+        """What a saved race needs to be read again another day."""
+        m = self.drivers_msg()
+        return {"meta": m["meta"], "drivers": m["drivers"], "classes": m["classes"], "player": self.player}
+
     def set_session(self, info):
+        self._info = info
+        if self._replay:
+            self._replay.set_session(info)
         wk = (info.get("WeekendInfo") or {})
         di = (info.get("DriverInfo") or {})
         si = (info.get("SessionInfo") or {})
@@ -430,7 +458,10 @@ class Engine:
         """The lap counter and the lap distance don't flip on the same frame at the line. Added up, the
         car would jump a whole lap back or forward for a moment: order and gaps blink. Crew Chief
         corrects the same mismatch. Returns -1, 0 or +1 to add to the laps; never for more than 2 s, so
-        a tow or a reset isn't taken for a line crossing."""
+        a tow or a reset isn't taken for a line crossing. A car that vanished from the telemetry changes
+        nothing here: if it crossed the line meanwhile, it is the wrapped distance that says so."""
+        if laps < 0 or pct < 0:
+            return 0
         prev = self._lap_sync.get(i)
         fix, since = 0, t
         if prev:
@@ -445,6 +476,57 @@ class Engine:
         return fix
 
     def update(self, raw):
+        """A frame of state. While the driver watches the replay all the telemetry is that moment of the
+        race, the session and the clock included, and nothing live comes through: the board stays on the
+        last live frame, with what still arrives on top (the clock, the results in SessionInfo). The replay
+        goes to a second engine, whose only job is to feed the Race Events."""
+        behind = (raw.get("ReplayFrameNumEnd") or 0) / 60.0 if raw.get("IsReplayPlaying") and not self.meta.get("replayFile") else 0.0
+        if behind <= 3 or self._live is None:
+            st = self._update(raw)
+            if behind <= 3:
+                self._live, self._live_at = st, time.monotonic()
+            return st
+        return self._seen_from_replay(raw, behind)
+
+    def _seen_from_replay(self, raw, behind):
+        if self._replay is None:
+            self._replay = Engine(_ReadOnlyMapper(self.mapper))
+            self._replay.ev, self._replay._ended = self.ev, self._ended
+            if self._info:
+                self._replay.set_session(self._info)
+        seen = self._replay._update(raw)
+        self.pit_in = False
+        live = self._live
+        session = dict(live["session"], behind=round(behind, 1))
+        if "session" in seen:
+            session["static"] = seen["session"].get("static")
+        if session.get("timeRemain") is not None:
+            session["timeRemain"] = max(0.0, session["timeRemain"] - (time.monotonic() - self._live_at))
+        return self._with_results({**live, "session": session})
+
+    def _with_results(self, st):
+        """Positions and lap times keep coming in SessionInfo, as each car crosses the line."""
+        res = {r.get("CarIdx"): r for r in ((self.sessions.get(st["session"].get("num")) or {}).get("ResultsPositions") or [])}
+        if not res:
+            return st
+
+        def fresh(c):
+            r = res.get(c["i"])
+            if not r:
+                return c
+            c = dict(c)
+            if (r.get("Position") or 0) > 0:
+                c["p"], c["cp"] = r["Position"], (r.get("ClassPosition") or 0) + 1
+            if (r.get("FastestTime") or 0) > 0:
+                c["best"] = r["FastestTime"]
+            if (r.get("LastTime") or 0) > 0:
+                c["last"] = r["LastTime"]
+            return c
+        cars = sorted((fresh(c) for c in st["cars"]), key=lambda c: c.get("p") or 999)
+        me = next((c for c in cars if c["i"] == st["me"]["i"]), None)
+        return {**st, "cars": cars, "me": {**st["me"], "p": me["p"], "cp": me["cp"]} if me else st["me"]}
+
+    def _update(self, raw):
         t = float(raw.get("SessionTime") or 0.0)
         dt = 0.0 if self._prev_t is None else t - self._prev_t
         self._prev_t = t

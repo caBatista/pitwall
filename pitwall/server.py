@@ -12,6 +12,7 @@ from pathlib import Path
 from aiohttp import WSMsgType, web
 
 from .engine import Engine
+from .events import history, note, past_race, purge
 
 # inside the PyInstaller .exe the bundled files live under sys._MEIPASS
 BUNDLE = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
@@ -64,11 +65,13 @@ class App:
         self._wx_sent = 0.0
         self._connected = False
         self.auto_fuel = None   # (reserve, laps) with Auto fuel on, from the fuel card
-        # the event list survives a restart of the app; the simulator starts over each time
-        self._ev_path = None if source.name == "simulator" else engine.mapper.dir / "events.json"
-        self._ev_saved, self._ev_save_t = engine.ev.ver, 0.0
-        if self._ev_path:
-            engine.ev.load(self._ev_path)
+        # each race keeps its events for 30 days; the simulator's are not worth keeping
+        self._ev_dir = engine.mapper.dir / "events"
+        self._ev_save = source.name != "simulator"
+        self._ev_saved, self._ev_save_t, self._ev_told = engine.ev.ver, 0.0, None
+        if self._ev_save:
+            engine.ev.dir = self._ev_dir
+            purge(self._ev_dir)
 
     # ---- websocket ---------------------------------------------------------
     async def ws(self, request):
@@ -236,12 +239,15 @@ class App:
             out.append(dumps({"type": "events", "all": ev.items}))
         elif ev.new:
             out.append(dumps({"type": "events", "add": ev.drain()}))
-        if self._ev_path and ev.ver != self._ev_saved and time.time() - self._ev_save_t > 10:
+        if self._ev_save and ev.items and ev.ver != self._ev_saved and time.time() - self._ev_save_t > 10:
             self._ev_saved, self._ev_save_t = ev.ver, time.time()
             try:
-                ev.save(self._ev_path)
-            except OSError as e:
-                print(f"[events] not saved: {e}", flush=True)
+                path = ev.save(self._ev_dir, self.engine.event_info())
+                if path != self._ev_told:
+                    self._ev_told = path
+                    note(self._ev_dir, f"saving {path.name}")
+            except (OSError, TypeError, ValueError) as e:
+                note(self._ev_dir, f"not saved: {e!r}")
         out.append(dumps_clean(state))
         for text in out:
             await self.broadcast(text)
@@ -257,6 +263,16 @@ class App:
         app.router.add_get("/ws", self.ws)
         app.router.add_get("/prefs", self.prefs_get)
         app.router.add_put("/prefs", self.prefs_put)
+
+        async def races(_):
+            return web.json_response(await asyncio.to_thread(history, self._ev_dir))
+
+        async def race(request):
+            d = await asyncio.to_thread(past_race, self._ev_dir, request.match_info["key"])
+            return web.json_response(d) if d else web.Response(status=404)
+
+        app.router.add_get("/history", races)
+        app.router.add_get("/history/{key}", race)
         app.router.add_static("/", WEB_DIR, show_index=False)
 
         async def start(app_):
