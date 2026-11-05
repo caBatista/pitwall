@@ -10,6 +10,7 @@ from pathlib import Path
 
 from aiohttp import WSMsgType, web
 
+from .camera import HIDE, TEMPORARY, TOOL, WRITABLE
 from .engine import Engine
 from .events import history, note, past_race, purge
 
@@ -102,6 +103,8 @@ class App:
                             self.source.replay_live()
                     elif data.get("cmd") == "focus":
                         self.focus(data.get("i"))
+                    elif data.get("cmd") == "cam":
+                        self.camera(data)
                     elif data.get("cmd") == "chat":
                         await asyncio.to_thread(self.chat, data.get("i"), data.get("to"))
         finally:
@@ -134,6 +137,49 @@ class App:
         d = self._driver(i)
         if d and d["num"]:
             self.source.focus(i, d["num"])
+
+    # ---- the camera widget. Never with the driver in the car: the view and the keys are the driving's -----
+    def camera(self, data):
+        if self.engine.in_car:
+            return
+        st = self.engine.cam_now
+        group, cam, do, n = st.get("g") or 1, st.get("c") or 0, data.get("do"), data.get("n")
+        num = (self._driver(st.get("i")) or {}).get("num")
+        if do == "group" and isinstance(n, int) and num:
+            self.source.cam_switch(num, n, 0)
+        elif do == "camera" and isinstance(n, int) and num:
+            self.source.cam_switch(num, group, n)
+        elif do == "driver":
+            d = self._driver(n)
+            if d and d["num"]:
+                self.source.cam_switch(d["num"], group, cam)
+        elif do == "follow" and n in (-1, -2, -3):
+            self.source.cam_follow(n, group, cam)
+        elif do == "speed" and isinstance(n, int) and -16 <= n <= 16:
+            self.source.replay_speed(n, bool(data.get("slow")))
+        elif do == "search" and isinstance(n, int) and 0 <= n <= 9:
+            self.source.replay_jump(n)
+        elif do == "lap" and isinstance(n, int):
+            t = self.engine.lap_start(st.get("i"), n)
+            if t is not None:
+                self.source.replay_at(self.engine.session_num, int(t * 1000))
+        elif do == "tool":
+            self.cam_tool(bool(data.get("on")), st.get("st") or 0)
+        elif do == "hide":
+            bits = (st.get("st") or 0) & WRITABLE
+            self.source.cam_state(bits | HIDE if data.get("on") else bits & ~HIDE)
+        elif do == "stick":
+            axes = data.get("axes") or {}
+            if axes and not (st.get("st") or 0) & TOOL:
+                self.cam_tool(True, st.get("st") or 0)
+            self.source.cam_move(axes)
+        elif do == "tap":
+            self.source.cam_tap(n)
+
+    def cam_tool(self, on, state):
+        """Always with temporary edits: closing the tool puts the camera back, nothing goes to the user's camera file."""
+        bits = state & WRITABLE
+        self.source.cam_state(bits | TOOL | TEMPORARY if on else bits & ~TOOL & ~TEMPORARY)
 
     def replay(self, event_id):
         """Show an event in the replay. iRacing has no replay with the driver in the car."""
