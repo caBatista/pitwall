@@ -516,8 +516,10 @@ class Engine:
                 self._replay.set_session(self._info)
         seen = self._replay._update(raw)
         self.pit_in = False
+        # where the driver is now, not where the last live frame found them: watching a replay is out of the car
+        self.in_car = bool(raw.get("IsOnTrack"))
         live = self._live
-        session = dict(live["session"], behind=round(behind, 1))
+        session = dict(live["session"], behind=round(behind, 1), inCar=self.in_car)
         if "session" in seen:
             session["static"] = seen["session"].get("static")
         if session.get("timeRemain") is not None:
