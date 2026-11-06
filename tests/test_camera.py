@@ -8,7 +8,7 @@ from pitwall.sources import MockSource
 
 def keys(clock):
     sent = []
-    return CamKeys(lambda down, key: sent.append((down, key)), clock=lambda: clock[0]), sent
+    return CamKeys(lambda down, key: sent.append((down, key)), clock=lambda: clock[0], keys={}), sent
 
 
 def test_a_stick_pushed_all_the_way_holds_the_key():
@@ -227,18 +227,6 @@ def test_opening_the_tool_hides_the_panels_and_the_hide_icon_brings_them_back(en
     assert src.calls == [("state", 0x34)]
 
 
-def test_the_arrows_go_to_the_next_car_on_track_not_on_the_board(engine):
-    app, src = out_of_car(engine)
-    raw = {"CarIdxLapDistPct": [.95, .1, .5, -1.0], "CarIdxOnPitRoad": [False, False, False, False]}
-    engine.drivers = {0: {}, 1: {}, 2: {}, 3: {}}
-    engine.raw_now = raw
-    assert engine.neighbour(0, 1) == 1      # passa pela linha
-    assert engine.neighbour(0, -1) == 2
-    assert engine.neighbour(1, 1) == 2
-    raw["CarIdxOnPitRoad"][2] = True
-    assert engine.neighbour(1, 1) == 0
-
-
 def test_a_finished_race_in_the_replay_shows_the_end_on_my_car_not_the_one_on_camera(engine):
     info = session([0, 1], results=[{"CarIdx": 0, "Position": 2, "ClassPosition": 1, "FastestTime": 99.5, "LastTime": 100.5, "LapsComplete": 9, "Incidents": 6},
                                     {"CarIdx": 1, "Position": 1, "ClassPosition": 0, "FastestTime": 98.0, "LastTime": 99.0, "LapsComplete": 9}])
@@ -299,3 +287,44 @@ def test_opened_in_the_replay_the_clock_is_now_not_that_moment(engine):
     engine.set_session(session([0, 1], kind="Practice"))
     st = engine.update(frame({0: (5, .5), 1: (5, .4)}, SessionTimeRemain=900.0, IsOnTrack=False, IsReplayPlaying=True, ReplayFrameNumEnd=6000))
     assert st["session"]["timeRemain"] == 800
+
+
+def test_before_the_green_the_clock_stands_at_the_length_of_the_race(engine):
+    info = session([0, 1])
+    info["SessionInfo"]["Sessions"][0]["SessionTime"] = "1800.0000 sec"
+    engine.set_session(info)
+    st = engine.update(frame({0: (0, .5), 1: (0, .4)}, SessionState=3, SessionTimeRemain=0.0, SessionTimeTotal=1800.0))
+    assert st["session"]["timeRemain"] == 1800
+
+
+def test_after_the_flag_no_time_is_left_whatever_the_clock_of_the_cool_down_says(engine):
+    engine.set_session(session([0, 1]))
+    st = engine.update(frame({0: (5, .5), 1: (5, .4)}, SessionState=5, SessionTimeRemain=780.0))
+    assert st["session"]["timeRemain"] == 0
+
+
+def test_leaving_the_pits_for_the_grid_is_not_a_pit_stop(engine):
+    engine.set_session(session([0, 1]))
+    st = engine.update(frame({0: (0, .5), 1: (0, .4)}, SessionState=2, CarIdxOnPitRoad=[True, False]))
+    st = engine.update(frame({0: (0, .6), 1: (0, .4)}, SessionState=4, CarIdxOnPitRoad=[False, False]))
+    assert "pl" not in next(c for c in st["cars"] if c["i"] == 0)
+
+
+def test_with_nobody_in_the_world_the_lap_is_the_last_one(engine):
+    engine.set_session(session([0, 1], results=[{"CarIdx": 0, "Position": 1, "LapsComplete": 8}]))
+    assert engine._cam({"SessionNum": 0, "CamCarIdx": 0, "CarIdxLapCompleted": [-1] * 2})["lap"] == 8
+
+
+def test_the_keys_are_the_ones_the_user_has_in_iracing():
+    import struct
+    from pitwall import keymap
+    entry = lambda name, kind, vk, mods: name + b"\0" + struct.pack("<5I", 1, kind, 4, vk, mods << 16) + bytes(40)
+    keys = keymap.parse(entry(b"PIDVIDFocusNextCar", 6, 0x4B, 0) + entry(b"CamAltInc", 0x1F, 0x49, 0x0C) + entry(b"Gone", 3, 0x10, 0) + entry(b"CamFOVInc", 0x1F, 0x78, 0))
+    assert keys == {"FocusNextCar": (0, 0x4B), "CamAltInc": (0x0C, 0x49)}
+    sent = []
+    CamKeys(lambda down, key: sent.append((down, key[0])), keys=keys).tap("car+")
+    assert sent == [(True, 0x4B), (False, 0x4B)]
+    k = CamKeys(lambda down, key: sent.append((down, key[0])), keys={})
+    sent.clear()
+    k.tap("car-")
+    assert sent == [(True, 0x10), (True, 0x56), (False, 0x56), (False, 0x10)]

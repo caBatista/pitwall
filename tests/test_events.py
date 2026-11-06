@@ -551,3 +551,13 @@ def test_offline_sessions_do_not_share_a_file(engine, tmp_path):
     assert log.save(tmp_path).name == "offline-124.json"
     log.sub = 999
     assert log.key() == "999"
+
+
+def test_an_offline_session_comes_back_only_if_it_was_saved_moments_ago(tmp_path):
+    (tmp_path / "offline-100.json").write_text(json.dumps({"saved": 1.0, "items": []}), "utf-8")
+    log = EventLog()
+    log.dir = tmp_path
+    assert log._recent_offline() is not None and log._began == 100
+    old = time.time() - 3600
+    os.utime(tmp_path / "offline-100.json", (old, old))
+    assert log._recent_offline() is None

@@ -200,10 +200,6 @@ class App:
             d = self._driver(n)
             if d and d["num"]:
                 self.source.cam_switch(d["num"], group, cam)
-        elif do == "car" and n in (-1, 1):
-            d = self._driver(self.engine.neighbour(st.get("i"), n))
-            if d and d["num"]:
-                self.source.cam_switch(d["num"], group, cam)
         elif do == "speed" and isinstance(n, int) and -16 <= n <= 16:
             self.source.replay_speed(n, bool(data.get("slow")))
         elif do == "search" and isinstance(n, int) and 0 <= n <= 9:

@@ -4,6 +4,7 @@ import { layoutPage } from './set-layout.js';
 import { screenPage } from './set-screen.js';
 import { generalPage } from './set-general.js';
 import { headerPage } from './set-header.js';
+import { flagsPage } from './set-flags.js';
 
 // One entry per page, in the order of the menu. To add a setting: give the page a render(root).
 const GROUPS = [
@@ -20,6 +21,7 @@ const GROUPS = [
     { id: 'map', name: 'Track map', info: 'The track and every car on it.' },
     { id: 'weather', name: 'Weather', info: 'Conditions and how they are changing.' },
     { id: 'events', name: 'Race events', info: 'What happened in the session.' },
+    { id: 'flags', name: 'Race flags', info: 'The flags you get, on the background of the board.', render: flagsPage },
   ] },
 ];
 const PAGES = GROUPS.flatMap((g) => g.pages);

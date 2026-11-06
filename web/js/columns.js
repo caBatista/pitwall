@@ -114,8 +114,9 @@ export const HEADER = {
   gap: { label: 'Space', fixed: true, note: 'What comes after it goes to the right' },
   sof: { label: 'Strength of field' },
   conn: { label: 'Connection' },
+  pc: { label: 'PC time', opts: [{ k: 'sec', label: 'Show the seconds', type: 'bool', d: false }] },
 };
-export const headerDefault = () => ({ order: Object.keys(HEADER), hide: { sof: ['test'] }, opt: {} });
+export const headerDefault = () => ({ order: Object.keys(HEADER), hide: { sof: ['test'], pc: ['test', 'practice', 'qualify', 'race', 'over', 'out'] }, opt: {} });
 
 // ---- any list -------------------------------------------------------------------------------
 /** The saved order, without what no longer exists and with what is new, so an old file still works. */

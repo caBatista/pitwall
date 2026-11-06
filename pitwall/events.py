@@ -46,6 +46,7 @@ ON_TRACK, OFF_TRACK = 3, 0
 
 
 KEEP_DAYS = 30
+OFFLINE_FRESH = 1800   # s: an offline session saved this recently is still the same one
 
 
 def past_race(folder, key):
@@ -162,6 +163,14 @@ class EventLog:
         os.replace(tmp, path)
         return path
 
+    def _recent_offline(self):
+        """An offline session has no number to find it by: the one saved moments ago is this one, the app restarted."""
+        files = sorted(Path(self.dir).glob("offline-*.json"), key=lambda p: p.stat().st_mtime) if self.dir else []
+        if not files or time.time() - files[-1].stat().st_mtime > OFFLINE_FRESH:
+            return None
+        self._began = int(files[-1].stem.split("-")[1])
+        return past_race(self.dir, files[-1].stem)
+
     def _restore(self, items):
         self.items = items[-MAX_EVENTS:]
         self.by_id = {e["id"]: e for e in self.items}
@@ -188,7 +197,7 @@ class EventLog:
             self.items, self.new, self.by_id = [], [], {}
             self._seen = {}
             self._began = int(time.time())
-            saved = past_race(self.dir, str(f.sub)) if self.dir and f.sub else None
+            saved = past_race(self.dir, str(f.sub)) if self.dir and f.sub else self._recent_offline()
             if saved:
                 self._restore(saved.get("items") or [])
                 self.laps = {int(sn): {int(i): {int(lap): t for lap, t in laps.items()} for i, laps in cars.items()}

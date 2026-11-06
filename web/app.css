@@ -113,14 +113,14 @@ body[data-out][data-slot] .board:not(.solo) > .col-bottom { grid-area: map; grid
 body[data-out][data-slot] .board:not(.solo) #w-map { visibility: hidden; }
 body[data-out][data-slot="fuel"] .board:not(.solo) #w-weather, body[data-out][data-slot="weather"] .board:not(.solo) #w-fuel { display: none; }
 /* a finished race in the replay: the result on the left, only Race Events on the right */
-body[data-static][data-out][data-kind] .board:not(.solo) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) 111px; grid-template-areas: "standings events" "standings camera"; }
+body[data-static][data-out][data-kind] .board:not(.solo) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) 81px; grid-template-areas: "standings events" "standings camera"; }
 body[data-static] #board > #w-map, body[data-static] #board > .col-bottom { display: none; }
 .slot-nav { display: none; position: absolute; top: 9px; left: 50%; transform: translateX(-50%); z-index: 3; gap: 4px; }
 body[data-out] .board:not(.solo) .card:hover > .slot-nav { display: flex; }
 .board.lay .slot-nav { display: none !important; }   /* the user's layout (see applyLayout in main.js) */
 .slot-nav button { width: 30px; height: 24px; padding: 0; border: 1px solid var(--line-2); border-radius: 6px; background: var(--bg-2); color: var(--accent); font: 700 17px/1 var(--mono); cursor: pointer; }
 .slot-nav button:hover { border-color: var(--accent); }
-body[data-out][data-kind] .board:not(.solo) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) 340px 111px; grid-template-areas: "standings events" "standings map" "standings camera"; }
+body[data-out][data-kind] .board:not(.solo) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) 340px 81px; grid-template-areas: "standings events" "standings map" "standings camera"; }
 .board.solo { grid-template-columns: 1fr; grid-template-rows: 1fr; grid-template-areas: none; }
 .board.solo > * { grid-area: auto !important; }
 
@@ -170,6 +170,10 @@ body.transparent .card { background: rgba(17, 17, 18, .82); backdrop-filter: blu
 .ghead .gl { display: flex; align-items: center; gap: 12px; padding-left: 4px; white-space: nowrap; color: var(--txt); font: 900 13.5px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; }
 .ghead .gl::before { content: ""; width: 10px; height: 10px; margin-right: -4px; border-radius: 2px; background: var(--cc); transform: skewX(-12deg); }
 .ghead .gn { display: inline-flex; align-items: center; gap: 4px; color: var(--dim); font: 600 11.5px/1 var(--num); letter-spacing: 0; text-transform: none; }
+.ghead .ctag { position: relative; top: 8px; display: inline-block; transform: translateX(calc(50% - 28px));   /* centred on a lap time, 56 px wide and right-aligned in its column */ padding: 2px 6px; border-radius: 5px 5px 0 0; background: rgba(255, 255, 255, .06); color: var(--dim); font: 600 10px/1 var(--num); letter-spacing: .03em; text-transform: uppercase; }
+.srow .t.mid { text-align: center; }
+.srow .gapc .hd { color: var(--txt); }
+.srow .tnone { display: inline-block; width: 56px; text-align: center; }   /* no time yet: where a time would be centred */
 .ghead .gn .helmet { width: 13px; height: 11px; color: var(--dim); }
 .srow .t { font: 600 12.5px var(--num); font-variant-numeric: tabular-nums; text-align: right; }
 .srow .dl { font: 600 12px var(--num); font-variant-numeric: tabular-nums; text-align: right; color: var(--dim); }
@@ -484,8 +488,8 @@ body[data-out] .board:not(.solo) #w-camera { display: flex; grid-area: camera; }
 body[data-static] .slot-nav { display: none !important; }
 .cam { display: flex; align-items: center; gap: 14px; flex: 1; min-height: 0; font: 600 12px var(--num); }
 /* as tall as its buttons, the height of WIDGETS.camera in layout.js */
-.board:not(.solo) #w-camera { width: 100%; height: 72px; margin-bottom: 39px; justify-self: start; align-self: start; overflow: visible; }   /* 39 px: on the default screen, its lower row starts where the Standings footer does */
-.board.lay #w-camera { box-sizing: border-box; height: 81px; margin-bottom: 0; padding-bottom: 9px; }   /* in a layout it goes to the corner: 9 px and its buttons end with the Standings footer */
+/* its buttons end on the line of the Standings footer, with 9 px under them to the corner */
+.board:not(.solo) #w-camera { box-sizing: border-box; width: 100%; height: 81px; padding-bottom: 9px; justify-self: start; overflow: visible; }
 .cam[hidden] { display: none; }
 .cam svg { display: block; width: 15px; height: 15px; fill: currentColor; }
 .cam svg.wide { width: 19px; }
@@ -615,3 +619,5 @@ body[data-static] .slot-nav { display: none !important; }
 .flag-test [data-flag="black"] i { background: #000; }
 .flag-test [data-flag="meatball"] i { background: radial-gradient(circle, #ff7a1a 42%, #000 46%); }
 .flag-test [data-flag="checkered"] i { background: repeating-conic-gradient(#fff 0 25%, #000 0 50%) 0 0 / 7px 7px; }
+
+body[data-ai] .rel-body .rrow { grid-template-columns: 34px 30px 40px minmax(90px, 1fr) 60px 58px; }   /* AI race: no country, licence or rating */

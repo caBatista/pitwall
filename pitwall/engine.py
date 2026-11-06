@@ -439,6 +439,7 @@ class Engine:
             c["sof"] = round(SOF_K * math.log(len(irs) / sum(math.exp(-r / SOF_K) for r in irs))) if irs else None
         ordered = sorted(classes.values(), key=lambda c: c["est"])
         self.meta["sof"] = sof([d["ir"] for d in self.drivers.values()])
+        self.meta["ai"] = any(d["ai"] for d in self.drivers.values())   # no ratings, licences or countries to show
         self.classes = {c["id"]: c for c in ordered}
         self.class_order = [c["id"] for c in ordered]
         if len(self.classes) == 1:  # single class: the colour carries no information, use the dash amber
@@ -533,15 +534,6 @@ class Engine:
         """iRacing's own lap jump landed here, right at the line: nothing knows better."""
         self.ev.laps.setdefault(self.now_shown()[0], {}).setdefault(i, {})[lap] = round(t, 3)
 
-    def neighbour(self, i, step):
-        """The car next to this one on the track, at the moment on screen (the raw frame, even in a replay):
-        step 1 the one ahead, -1 the one behind. Not cars in the pits or out of the world."""
-        pct, pit = self.raw_now.get("CarIdxLapDistPct") or [], self.raw_now.get("CarIdxOnPitRoad") or []
-        on = [c for c in self.drivers if c != i and c < len(pct) and pct[c] >= 0 and not (c < len(pit) and pit[c])]
-        if not on or not isinstance(i, int) or i >= len(pct) or pct[i] < 0:
-            return on[0] if on else None
-        return min(on, key=lambda c: (pct[c] - pct[i]) * step % 1.0)
-
     def _frame(self, raw):
         """A frame of state. While the driver watches the replay all the telemetry is that moment of the
         race, the session and the clock included, and nothing live comes through: the board stays on the
@@ -561,10 +553,13 @@ class Engine:
         """The camera and the replay, always as they are: nothing here belongs to a moment of the race."""
         i, laps = raw.get("CamCarIdx"), raw.get("CarIdxLapCompleted") or []
         done = laps[i] if isinstance(i, int) and 0 <= i < len(laps) else -1   # the lap on screen, not the board's
+        results = (self.sessions.get(raw.get("SessionNum")) or {}).get("ResultsPositions") or []
+        if done < 0:   # gone from the world: its last lap
+            done = next(((r.get("LapsComplete") or 0) - 1 for r in results if r.get("CarIdx") == i), -1)
         return {"i": i, "g": raw.get("CamGroupNumber"), "c": raw.get("CamCameraNumber"), "st": raw.get("CamCameraState") or 0,
                 "lap": done + 1 if done >= 0 else None,
                 "race": "race" in str((self.sessions.get(raw.get("SessionNum")) or {}).get("SessionType") or "").lower(),
-                "total": max((r.get("LapsComplete") or 0 for r in (self.sessions.get(raw.get("SessionNum")) or {}).get("ResultsPositions") or []), default=0),
+                "total": max((r.get("LapsComplete") or 0 for r in results), default=0),
                 "speed": raw.get("ReplayPlaySpeed") or 0, "slow": bool(raw.get("ReplayPlaySlowMotion")), "replay": bool(raw.get("IsReplayPlaying"))}
 
     def lap_start(self, i, lap):
@@ -772,7 +767,7 @@ class Engine:
             if surf[idx] < 0 or pitr[idx]:
                 self._out.pop(idx, None)
                 if pitr[idx]:
-                    if idx not in self._in_pit:   # last pit stop: lap it is on and pit road time
+                    if idx not in self._in_pit and int(raw.get("SessionState") or 0) >= 4:   # last pit stop: lap it is on and pit road time; leaving for the grid isn't one
                         self._pits[idx] = [(lapc[idx] or 0) + 1, t, None]
                     self._in_pit.add(idx)
                 elif idx in self._pits and self._pits[idx][2] is None:   # to the garage from the pits: not a stop
@@ -1147,6 +1142,11 @@ class Engine:
                            bool(raw.get("OnPitRoad")))
 
         tr = time_rem if time_rem < UNLIMITED_TIME else None
+        if kind == "race" and true_state >= 5:   # the flag is out: iRacing's clock goes on for the cool down
+            tr = 0.0
+        elif kind == "race" and (true_state < 4 or (tr is not None and tr < 0)):   # before the green, and -1 on its first frame
+            length = re.match(r"[\d.]+", str(sess.get("SessionTime") or ""))
+            tr = float(length.group()) if length else time_total if 0 < time_total < UNLIMITED_TIME else tr
 
         # race length in laps, for the focused car: the race ends when the overall leader takes the flag, so
         # it is the leader's laps (exact in a lap race, estimated in a timed one: the lap running

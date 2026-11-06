@@ -147,7 +147,7 @@ export const camera = {
       const to = list[(at + Number(d.group) + list.length) % list.length];
       if (to) send({ do: 'group', n: to.n });
     } else if ('car' in d) {
-      send({ do: 'car', n: Number(d.car) });   // the server has the moment on screen; the board may not
+      send({ do: 'tap', n: Number(d.car) > 0 ? 'car+' : 'car-' });   // iRacing's own: it goes by the track
     }
   },
 

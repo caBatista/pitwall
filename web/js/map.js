@@ -69,7 +69,8 @@ export const trackmap = {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.W, this.H);
     if (!pts || !st) return;
-    if (this.fitVer !== S.track.ver) { this.compute(pts, S.track.turns || []); this.fitVer = S.track.ver; }
+    // by the outline itself: after a reconnect another track can come with the same version number
+    if (this.fitVer !== S.track.ver || this.fitPts !== pts) { this.compute(pts, S.track.turns || []); this.fitVer = S.track.ver; this.fitPts = pts; this.bgKey = ''; }
     const u = this.u;   // size unit, see compute()
     this.off = S.track.offset || 0;
     // the track doesn't change: drawn once on the side, only the cars are drawn on every update

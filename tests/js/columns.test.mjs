@@ -182,6 +182,6 @@ test('footer: what does not fit goes from the end', () => {
 });
 
 test('header default: as it always was, the SOF out of a test session', () => {
-  assert.deepEqual(orderOf(headerDefault(), HEADER), ['brand', 'series', 'track', 'clock', 'gap', 'sof', 'conn']);
+  assert.deepEqual(orderOf(headerDefault(), HEADER), ['brand', 'series', 'track', 'clock', 'gap', 'sof', 'conn', 'pc']);
   assert.ok(hiddenIn(headerDefault(), HEADER, 'sof', 'test') && !hiddenIn(headerDefault(), HEADER, 'sof', 'race'));
 });

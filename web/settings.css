@@ -134,3 +134,4 @@ body { zoom: 1; display: grid; grid-template: 44px minmax(0, 1fr) / 216px minmax
 .col-opt select { min-width: 190px; padding: 4px 8px; border: 1px solid var(--line-2); border-radius: 7px; background: var(--card); color: var(--txt); font: 500 12.5px var(--sans); }
 .col-opt select:focus-visible { outline: 1px solid var(--accent); }
 .col-opt select option { background: var(--card); color: var(--txt); }
+.st-num { flex: none; width: 58px; height: 24px; margin-left: auto; margin-right: 12px; padding: 0 6px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--bg-2); color: var(--txt); font: 600 12px var(--num); text-align: center; }

@@ -63,10 +63,10 @@ const CELL = {
   sr: (c, x) => ['sr', x.lic ? `<b>${esc((x.sr || '').slice(0, 3))}</b><i>${esc(x.lic)}</i>` : '', `--lc:${x.d.licColor}`],
   ir: (c, x) => ['irb', irHtml(x.d.ir, c.irg, x.isRace && x.o.gain, x.o.irFmt)],
   tyre: (c, x) => ['c', tyreHtml(c.tc, x.o.tyreText)],
-  int: (c, x) => ['t dim', x.int],
-  gap: (c, x) => [`t ${x.leader ? 'dim' : ''}`, x.gap],
-  last: (c, x) => [`t ${c.pb ? 'pb' : ''}`, c.last ? lapTime(c.last, x.o.lastDec) + (c.lastx ? INV : '') : x.o.lastNone],
-  best: (c, x) => [`t ${c.cb ? 'cb' : ''}`, c.best ? lapTime(c.best, x.o.bestDec) : x.o.bestNone],
+  int: (c, x) => ['t dim mid', x.int],
+  gap: (c, x) => [`t mid gapc ${x.leader ? 'dim' : ''}`, x.gap],
+  last: (c, x) => [`t ${c.pb ? 'pb' : ''}`, c.last ? lapTime(c.last, x.o.lastDec) + (c.lastx ? INV : '') : `<span class="tnone">${x.o.lastNone}</span>`],
+  best: (c, x) => [`t ${c.cb ? 'cb' : ''}`, c.best ? lapTime(c.best, x.o.bestDec) : `<span class="tnone">${x.o.bestNone}</span>`],
   d1: (c, x) => delta(c, 0, x),
   d2: (c, x) => delta(c, 1, x),
   d3: (c, x) => delta(c, 2, x),
@@ -183,19 +183,21 @@ export const standings = {
     const over = !!st.session?.over;
     const session = viewSession(kind, over, !st.session.inCar);
     // worked out when something changes (the session, the panel, a setting), not on every frame
-    const layoutKey = `${session}|${this.wide}|${innerWidth < 800}`;
+    const ai = !!S.meta?.ai;   // AI race: nothing online to show
+    const layoutKey = `${session}|${this.wide}|${innerWidth < 800}|${ai}`;
     if (layoutKey !== this.layoutKey) {
       this.layoutKey = layoutKey;
-      const want = standCols(prefs.stand, session);
+      const want = standCols(prefs.stand, session).filter((k) => !ai || !['flag', 'sr', 'ir'].includes(k));
       const fit = standFit(want, prefs.stand, over, innerWidth < 800 ? 0 : this.wide);   // a phone scrolls sideways instead
       this.cols = fit.cols;
       this.o = options(prefs.stand, session);
       this.body.parentElement.style.setProperty('--scols', standGrid(fit.cols, prefs.stand, over));   // not on body: its style is rewritten below
-      const { lead } = standHead(fit.cols);
+      const { lead, titles } = standHead(fit.cols);
       this.lead = lead;
-      this.heads = '';   // the class header stays alone: Int and Gap are named in the leader's row
-      this.classItems = shownIn(prefs.classHead, CLASS_HEAD, session);
-      const foot = footFit(shownIn(prefs.standFoot, FOOT, session), this.meBar.clientWidth);
+      // no titles, but these two: their numbers look alike
+      this.heads = titles.map((t) => `<div class="${t.a}"${t.span > 1 ? ` style="grid-column:span ${t.span}"` : ''}>${['Last', 'Fastest'].includes(t.title) ? `<span class="ctag">${t.title}</span>` : ''}</div>`).join('');
+      this.classItems = shownIn(prefs.classHead, CLASS_HEAD, session).filter((k) => !ai || k !== 'sof');
+      const foot = footFit(shownIn(prefs.standFoot, FOOT, session).filter((k) => !ai || k !== 'ir'), this.meBar.clientWidth);
       this.foot = foot.items;
       this.lastBar = null;
       try {

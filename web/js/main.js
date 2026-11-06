@@ -114,19 +114,19 @@ for (const q of [narrow, portrait]) q.addEventListener('change', applyLayout);
 addEventListener('prefs', applyLayout);
 
 // ---- the app's header (Settings > Header): order through flex, so the elements stay where main.js finds them
-const HEAD_EL = () => ({ brand: document.querySelector('.brand'), series: el.series, track: document.querySelector('.trk'), clock: document.querySelector('.clock'), gap: document.querySelector('.spacer'), sof: el.sof.parentElement, conn: el.conn });
+const HEAD_EL = () => ({ brand: document.querySelector('.brand'), series: el.series, track: document.querySelector('.trk'), clock: document.querySelector('.clock'), gap: document.querySelector('.spacer'), sof: el.sof.parentElement, conn: el.conn, pc: $('pc-box') });
 let headKey = '';
 function applyHeader() {
   const s = S.st?.session;
   if (!s) return;
   const session = viewSession(s.kind, s.over, !s.inCar), cfg = prefs.header;
-  const key = session + JSON.stringify(cfg);
+  const key = session + !!S.meta?.ai + JSON.stringify(cfg);
   if (key === headKey) return;
   headKey = key;
   const els = HEAD_EL();
   orderOf(cfg, HEADER).forEach((k, n) => {
     els[k].style.order = n * 2 + 1;
-    els[k].classList.toggle('off', hiddenIn(cfg, HEADER, k, session));
+    els[k].classList.toggle('off', hiddenIn(cfg, HEADER, k, session) || (k === 'sof' && !!S.meta?.ai));
     if (k === 'clock') document.getElementById('mock-seg').style.order = document.getElementById('flag-test').style.order = n * 2 + 2;
   });
   document.getElementById('set-btn').style.order = 99;
@@ -190,6 +190,8 @@ fetch('/series.json').then((r) => (r.ok ? r.json() : {})).then((j) => { SERIES =
 
 function header() {
   const st = S.st, m = S.meta;
+  const sec = optOf(prefs.header, HEADER, 'pc', 'sec');
+  $('pc-time').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', ...(sec ? { second: '2-digit' } : {}) });
   if (S.source === 'simulator') mockSession();
   if (m.track) {
     el.name.textContent = m.track;
@@ -248,6 +250,7 @@ function connect() {
       case 'hello': S.source = m.source; mockSeg.hidden = m.source !== 'simulator'; flagButtons(!!m.dev); break;
       case 'drivers':
         S.drivers = m.drivers; S.meta = m.meta || {}; S.classes = m.classes || [];
+        document.body.toggleAttribute('data-ai', !!S.meta.ai);
         S.classMap = new Map(S.classes.map((c) => [c.id, c]));
         slow = 0; invalidate(); break;
       case 'track': S.track = m.points ? m : null; if (!m.points && S.st) S.track = null; invalidate(); break;

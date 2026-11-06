@@ -1,17 +1,16 @@
 import { prefs } from './util.js';
+import { FLAGS as NAMES, flagCfg } from './flagcfg.js';
 
 /**
  * The flag the driver is under, as the colour of the background behind the whole board.
- * The white and the green are a moment, not a state: they show for a while, and again only when they come back.
- * The checkered stays until 2 s after the driver's own line. The pulse is a step every 50 ms and not a CSS
+ * How long each one shows comes from Settings > Race flags (flagcfg.js); the checkered counts from the driver's
+ * own line. The pulse is a step every 50 ms and not a CSS
  * animation, which would run at the monitor's rate (see Desempenho in CLAUDE.md).
  */
-const FOR_A_WHILE = { white: 8000, green: 6000 };
-const AFTER_MY_LINE = 2000, TEST_CHECKERED = 6000;
+const TEST_CHECKERED = 6000;
 const SLOW = 2400, FAST = 900;   // ms a pulse
 const PULSE = { black: FAST, white: SLOW, meatball: SLOW, blue: SLOW, checkered: SLOW, debris: SLOW, green: FAST, yellow: FAST };
 const STEP = 50, LOW = 0.45, FADE_IN = 300;
-const FLAGS = [['green', 'Green'], ['yellow', 'Yellow'], ['blue', 'Blue'], ['debris', 'Slippery surface'], ['white', 'White'], ['checkered', 'Checkered'], ['black', 'Black'], ['meatball', 'Meatball']];
 
 const bg = document.getElementById('flag-bg'), bar = document.getElementById('flag-test');
 let real = null, testing = null, timer = 0, pulse = 0, shown = null, ending = false;
@@ -40,7 +39,7 @@ function show(flag) {
   level();
   if (period) pulse = setInterval(level, STEP);
   else setTimeout(level, FADE_IN);
-  const lasts = FOR_A_WHILE[flag] ?? (testing === 'checkered' ? TEST_CHECKERED : 0);
+  const lasts = flag === 'checkered' ? (testing ? TEST_CHECKERED : 0) : flagCfg(prefs).items[flag].secs * 1000;
   if (lasts) timer = setTimeout(hide, lasts);
 }
 
@@ -50,7 +49,8 @@ function paint() {
 
 /** The flag in this frame; home: the driver has taken their checkered. */
 export function setFlag(flag, home) {
-  if (prefs.raceFlags === false) flag = null;   // Settings > General; the test buttons still work
+  const cfg = flagCfg(prefs);   // Settings > Race flags; the test buttons still work
+  if (!cfg.on || (flag && !cfg.items[flag].on)) flag = null;
   if (flag !== real) {
     real = flag;
     ending = false;
@@ -59,7 +59,7 @@ export function setFlag(flag, home) {
   if (flag === 'checkered' && home && !ending && !testing && shown === 'checkered') {
     ending = true;
     clearTimeout(timer);
-    timer = setTimeout(hide, AFTER_MY_LINE);
+    if (cfg.items.checkered.secs) timer = setTimeout(hide, cfg.items.checkered.secs * 1000);
   }
 }
 
@@ -67,7 +67,7 @@ export function setFlag(flag, home) {
 export function flagButtons(on) {
   bar.hidden = !on;
   if (bar.children.length) return;
-  bar.innerHTML = FLAGS.map(([k, name]) => `<button data-flag="${k}" title="${name}"><i></i></button>`).join('');
+  bar.innerHTML = Object.entries(NAMES).map(([k, f]) => `<button data-flag="${k}" title="${f.name}"><i></i></button>`).join('');
   bar.addEventListener('click', (e) => {
     const k = e.target.closest('[data-flag]')?.dataset.flag;
     if (!k) return;

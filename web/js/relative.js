@@ -31,6 +31,7 @@ export const relative = {
     const st = S.st;
     if (!st) return;
     const n = 3;   // 3 ahead, 3 behind
+    const ai = !!S.meta?.ai;   // AI race: no country, licence or rating
 
     const cars = new Map(st.cars.map((c) => [c.i, c]));
     const ahead = st.rel.filter((r) => r.dt >= 0).slice(-n);   // nearest n ahead (list is far→near)
@@ -47,10 +48,10 @@ export const relative = {
         ['spos', `<span class="sp">${c.cp || '–'}</span>`, `--cc:${cls.color}`],
         ['sn', esc(d.num)],
         ['mk', makeHtml(d.make)],
-        ['fc', flagHtml(d.country)],
+        ...(ai ? [] : [['fc', flagHtml(d.country)]]),
         ['rname', `<span class="nm">${esc(d.name)}</span>${extra}`],
-        ['sr', lic ? `<b>${esc((sr || '').slice(0, 3))}</b><i>${esc(lic)}</i>` : '', `--lc:${d.licColor}`],
-        ['irb', irHtml(d.ir, c.irg, st.session?.kind === 'race')],
+        ...(ai ? [] : [['sr', lic ? `<b>${esc((sr || '').slice(0, 3))}</b><i>${esc(lic)}</i>` : '', `--lc:${d.licColor}`],
+          ['irb', irHtml(d.ir, c.irg, st.session?.kind === 'race')]]),
         ['rlast', best],
       ];
     };
