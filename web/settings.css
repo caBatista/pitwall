@@ -101,7 +101,7 @@ body { zoom: 1; display: grid; grid-template: 44px minmax(0, 1fr) / 216px minmax
 /* the lists: a row, and the options behind its arrow */
 .col-row { display: block; height: auto; padding: 0; }
 .col-main { display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 10px 0 6px; }
-.col-s { grid-template-columns: repeat(6, 38px); }
+.col-s { grid-template-columns: repeat(5, 38px); }
 .col-s small { font-size: 9.5px; letter-spacing: .02em; }
 .col-n em { margin-left: 8px; color: var(--mute); font: 400 11.5px var(--sans); }
 .col-top { gap: 8px; padding-right: 10px; }

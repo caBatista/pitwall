@@ -119,7 +119,7 @@ let headKey = '';
 function applyHeader() {
   const s = S.st?.session;
   if (!s) return;
-  const session = viewSession(s.kind, s.over, !s.inCar), cfg = prefs.header;
+  const session = viewSession(s.kind, s.over), cfg = prefs.header;
   const key = session + !!S.meta?.ai + JSON.stringify(cfg);
   if (key === headKey) return;
   headKey = key;

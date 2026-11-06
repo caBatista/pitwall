@@ -9,7 +9,7 @@
  * In the Standings table also w: width (name takes what is left), inline: lives inside the driver's cell,
  * lead: goes under the class name when at the start of the row, a: alignment of the title.
  */
-export const viewSession = (kind, over, out) => (over ? 'over' : out ? 'out' : kind);
+export const viewSession = (kind, over) => (over ? 'over' : kind);   // in the car or not, it is the same session
 
 const DEC = (d) => ({ k: 'dec', label: 'Decimals', type: 'seg', values: [[0, '0'], [1, '1'], [2, '2'], [3, '3']], d });
 const AUTO_DEC = { k: 'dec', label: 'Decimals', type: 'seg', values: [['auto', 'Auto'], [0, '0'], [1, '1'], [2, '2'], [3, '3']], d: 'auto' };
@@ -80,7 +80,7 @@ export const CLASS_HEAD = {
   sof: { label: 'SOF', opts: [{ k: 'fmt', label: 'Format', type: 'seg', values: [['full', '2100'], ['k', '2.1k']], d: 'full' }] },
   laps: { label: "Leader's laps" },
 };
-export const classDefault = () => ({ order: Object.keys(CLASS_HEAD), hide: { laps: ['test', 'practice', 'qualify', 'race', 'over', 'out'] }, opt: {} });
+export const classDefault = () => ({ order: Object.keys(CLASS_HEAD), hide: { laps: ['test', 'practice', 'qualify', 'race', 'over'] }, opt: {} });
 
 /** The footer of the Standings. */
 const NO_STAKE = ['test', 'practice'];
@@ -98,7 +98,7 @@ export const FOOT = {
   air: { label: 'Air temp' },
 };
 const FOOT_EXTRA = ['cur', 'delta', 'fuel', 'track', 'air'];
-const ALL_SESSIONS = ['test', 'practice', 'qualify', 'race', 'over', 'out'];
+const ALL_SESSIONS = ['test', 'practice', 'qualify', 'race', 'over'];
 export const footDefault = () => ({
   order: Object.keys(FOOT),
   hide: { ir: [...NO_STAKE], inc: [...NO_STAKE], last: ['over'], ...Object.fromEntries(FOOT_EXTRA.map((k) => [k, [...ALL_SESSIONS]])) },
@@ -116,7 +116,7 @@ export const HEADER = {
   conn: { label: 'Connection' },
   pc: { label: 'PC time', opts: [{ k: 'sec', label: 'Show the seconds', type: 'bool', d: false }] },
 };
-export const headerDefault = () => ({ order: Object.keys(HEADER), hide: { sof: ['test'], pc: ['test', 'practice', 'qualify', 'race', 'over', 'out'] }, opt: {} });
+export const headerDefault = () => ({ order: Object.keys(HEADER), hide: { sof: ['test'], pc: ['test', 'practice', 'qualify', 'race', 'over'] }, opt: {} });
 
 // ---- any list -------------------------------------------------------------------------------
 /** The saved order, without what no longer exists and with what is new, so an old file still works. */

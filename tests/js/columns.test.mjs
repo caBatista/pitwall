@@ -36,9 +36,9 @@ test('every session can hide a column on its own', () => {
 });
 
 test('the results win over the garage, for what is shown', () => {
-  assert.equal(viewSession('race', true, true), 'over');
-  assert.equal(viewSession('practice', false, true), 'out');
-  assert.equal(viewSession('qualify', false, false), 'qualify');
+  assert.equal(viewSession('race', true), 'over');
+  assert.equal(viewSession('practice', false), 'practice');
+  assert.equal(viewSession('qualify', false), 'qualify');
 });
 
 test('the driver name never hides', () => {

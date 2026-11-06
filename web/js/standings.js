@@ -182,7 +182,7 @@ export const standings = {
 
     // race over: the results, nothing live - no tags but the chequered flag (finished), no tyre / int / gap / last / delta
     const over = !!st.session?.over;
-    const session = viewSession(kind, over, !st.session.inCar);
+    const session = viewSession(kind, over);
     // worked out when something changes (the session, the panel, a setting), not on every frame
     const ai = !!S.meta?.ai;   // AI race: nothing online to show
     const layoutKey = `${session}|${this.wide}|${innerWidth < 800}|${ai}`;
