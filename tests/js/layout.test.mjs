@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULTS, DEFAULTS_PORTRAIT, WIDGETS, addItem, boardLayout, gridArea, gridOf, layoutFor, moveItem, resizeItem, saveLayout, savedLayout, sessionKey, shapeOf } from '../../web/js/layout.js';
+import { DEFAULTS, DEFAULTS_PORTRAIT, WIDGETS, addItem, boardLayout, gridArea, gridOf, layoutFor, moveItem, resizeItem, rowTracks, saveLayout, savedLayout, sessionKey, shapeOf } from '../../web/js/layout.js';
 
 const { cols: COLS, rows: ROWS } = gridOf('landscape');
 
@@ -120,9 +120,20 @@ test('grid area', () => {
   assert.equal(gridArea({ x: 14, y: 4, w: 10, h: 4 }), '5 / 15 / span 4 / span 10');
 });
 
-test('camera control is a widget like the others, outside every default', () => {
+test('camera control: half the screen, at the lower right out of the car, and it only moves', () => {
   assert.equal(WIDGETS.camera.name, 'Camera control');
-  for (const list of [...Object.values(DEFAULTS), ...Object.values(DEFAULTS_PORTRAIT)]) assert.ok(!at(list, 'camera'));
-  const free = [{ id: 'standings', x: 0, y: 0, w: 14, h: 12 }];
-  assert.deepEqual(at(addItem(free, 'camera'), 'camera'), { id: 'camera', x: 14, y: 0, w: 10, h: 3 });
+  assert.deepEqual(at(DEFAULTS.out, 'camera'), { id: 'camera', x: 12, y: 10, w: 12, h: 2 });
+  assert.ok(!at(DEFAULTS.race, 'camera'));
+  const free = [{ id: 'standings', x: 0, y: 0, w: 12, h: 12 }];
+  const items = addItem(free, 'camera');
+  assert.deepEqual(at(items, 'camera'), { id: 'camera', x: 12, y: 0, w: 12, h: 2 });
+  assert.equal(resizeItem(items, 'camera', 20, 8, 'landscape'), items);
+  assert.deepEqual(at(savedLayout({ out: [{ id: 'camera', x: 14, y: 9, w: 10, h: 3 }] }, 'out', 'landscape'), 'camera'), { id: 'camera', x: 12, y: 9, w: 12, h: 2 });
+});
+
+test('the rows of a fixed widget add up to its height, the others share the rest', () => {
+  const tracks = rowTracks([{ id: 'standings', x: 0, y: 0, w: 12, h: 12 }, { id: 'camera', x: 12, y: 10, w: 12, h: 2 }], gridOf('landscape')).split(' 3');
+  assert.equal(tracks.length, 3);
+  assert.ok(rowTracks([{ id: 'standings', x: 0, y: 0, w: 12, h: 12 }], gridOf('landscape')).endsWith('minmax(0, 1fr)'));
+  assert.ok(rowTracks([{ id: 'camera', x: 12, y: 10, w: 12, h: 2 }], gridOf('landscape')).endsWith('33.5px 33.5px'));
 });

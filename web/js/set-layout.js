@@ -1,5 +1,5 @@
 import { esc, prefs, savePrefs } from './util.js';
-import { SESSIONS, WIDGETS, addItem, clearLayout, gridOf, layoutFor, moveItem, resizeItem, saveLayout, shapeOf } from './layout.js';
+import { SESSIONS, WIDGETS, addItem, clearLayout, fixedAnchor, gridOf, layoutFor, moveItem, resizeItem, saveLayout, shapeOf } from './layout.js';
 import { currentScreen } from './set-screen.js';
 
 const pct = (v, of) => `${(100 * v) / of}%`;
@@ -13,8 +13,17 @@ export async function layoutPage(root) {
   if (root.dataset.shown !== shown) return;   // left the page meanwhile
   const shape = shapeOf(scr.w, scr.h), { cols, rows } = gridOf(shape);
   const place = (el, i) => {
-    el.style.left = pct(i.x, cols); el.style.top = pct(i.y, rows);
-    el.style.width = pct(i.w, cols); el.style.height = pct(i.h, rows);
+    // as on the board: the rows of a fixed widget take its height, the others share the rest
+    const f = items.find((o) => WIDGETS[o.id].px), part = f ? (WIDGETS[f.id].px[1] * (prefs.zoom ?? 1.1)) / scr.h : 0;
+    const at = (r) => (f ? (Math.min(r, f.y) + Math.max(0, r - f.y - f.h)) * ((1 - part) / (rows - f.h)) + part * Math.max(0, Math.min(r - f.y, f.h)) / f.h : r / rows);
+    el.style.left = pct(i.x, cols); el.style.top = `${100 * at(i.y)}%`;
+    el.style.width = pct(i.w, cols); el.style.height = `${100 * (at(i.y + i.h) - at(i.y))}%`;
+    const px = WIDGETS[i.id]?.px;
+    if (px) {   // a fixed widget at its true size on this screen, where the board puts it in its cells
+      const w = px[0] ? (100 * px[0] * (prefs.zoom ?? 1.1)) / scr.w : (100 * i.w) / cols;
+      el.style.width = `${w}%`;
+      if (fixedAnchor(i, { cols, rows }).right) el.style.left = `${100 - w}%`;
+    }
   };
   root.insertAdjacentHTML('beforeend', `
     <section class="st-sec">
@@ -38,7 +47,7 @@ export async function layoutPage(root) {
     board.innerHTML = items.map((i) => `<div class="ly-tile" data-id="${i.id}">
         <button class="ly-rm" data-rm title="Remove" aria-label="Remove ${esc(WIDGETS[i.id].name)}"></button>
         <b>${esc(WIDGETS[i.id].name)}</b>
-        <span class="ly-rz" title="Drag to resize"></span>
+        ${WIDGETS[i.id].px ? '' : '<span class="ly-rz" title="Drag to resize"></span>'}
       </div>`).join('');
     paint();
     const out = Object.keys(WIDGETS).filter((id) => !items.some((i) => i.id === id));

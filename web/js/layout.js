@@ -10,11 +10,22 @@
 export const shapeOf = (w, h) => (h > w ? 'portrait' : 'landscape');
 export const gridOf = (shape) => (shape === 'portrait' ? { cols: 12, rows: 24 } : { cols: 24, rows: 12 });
 const keyOf = (session, shape) => (shape === 'portrait' ? `${session}:portrait` : session);
-/** The smallest size, in this grid's cells. */
-const minOf = (id, shape) => (shape === 'portrait'
+/** The smallest size, in this grid's cells. A widget of a fixed size takes the cells it needs and no others. */
+const minOf = (id, shape) => (WIDGETS[id].px ? fixedCells(id, shape) : shape === 'portrait'
   ? { w: Math.ceil(WIDGETS[id].mw / 2), h: WIDGETS[id].mh + 1 } : { w: WIDGETS[id].mw, h: WIDGETS[id].mh });
+const fixedCells = (id, shape) => (shape === 'portrait' ? WIDGETS[id].tall : { w: WIDGETS[id].w, h: WIDGETS[id].h });
+/** Where a fixed widget sits in its cells: against the edge of the board if it touches one, so it lines up with it. */
+/** The board's rows: equal, but the ones of a fixed widget add up to its height, so the others grow into what's left. */
+export function rowTracks(list, g, gap = 14) {
+  const f = list.find((i) => WIDGETS[i.id].px);
+  const rows = Array(g.rows).fill('minmax(0, 1fr)');
+  if (f) rows.fill(`${(WIDGETS[f.id].px[1] - gap * (f.h - 1)) / f.h}px`, f.y, f.y + f.h);
+  return rows.join(' ');
+}
+export const fixedAnchor = (i, g) => ({ right: i.x + i.w >= g.cols, bottom: i.y + i.h >= g.rows });
 
-// mw/mh: the smallest it can be; w/h: the size it comes with
+// mw/mh: the smallest it can be; w/h: the size it comes with. px: never resized, [width, height] in the
+// board's pixels; width 0: as wide as its cells
 export const WIDGETS = {
   standings: { name: 'Standings', mw: 8, mh: 3, w: 14, h: 12 },
   relative: { name: 'Relative', mw: 6, mh: 3, w: 10, h: 4 },
@@ -23,7 +34,7 @@ export const WIDGETS = {
   weather: { name: 'Weather', mw: 4, mh: 3, w: 5, h: 4 },
   laplog: { name: 'Lap times', mw: 8, mh: 3, w: 14, h: 12 },
   events: { name: 'Race events', mw: 6, mh: 3, w: 10, h: 4 },
-  camera: { name: 'Camera control', mw: 8, mh: 3, w: 10, h: 3 },
+  camera: { name: 'Camera control', w: 12, h: 2, tall: { w: 12, h: 2 }, px: [0, 81] },
 };
 export const SESSIONS = [['test', 'Test'], ['practice', 'Practice'], ['qualify', 'Qualify'], ['race', 'Race'], ['over', 'Race over'], ['out', 'In garage']];
 
@@ -35,7 +46,7 @@ export const DEFAULTS = {
   race: FULL, practice: FULL, qualify: NO_REL,
   test: [box('laplog', 0, 0, 14, 12), box('map', 14, 0, 10, 8), ...RIGHT],
   over: [box('standings', 0, 0, 12, 12), box('map', 12, 0, 12, 12)],
-  out: [box('standings', 0, 0, 14, 12), box('events', 14, 0, 10, 8), box('map', 14, 8, 10, 4)],
+  out: [box('standings', 0, 0, 12, 12), box('events', 12, 0, 12, 7), box('map', 12, 7, 12, 3), box('camera', 12, 10, 12, 2)],
 };
 
 /** Out of the car comes first: in any session, and also when the race ended, that is the screen in use. */
@@ -46,7 +57,7 @@ export const DEFAULTS_PORTRAIT = {
   qualify: [box('standings', 0, 0, 12, 12), box('map', 0, 12, 12, 6), box('fuel', 0, 18, 6, 6), box('weather', 6, 18, 6, 6)],
   test: [box('laplog', 0, 0, 12, 12), box('map', 0, 12, 12, 6), box('fuel', 0, 18, 6, 6), box('weather', 6, 18, 6, 6)],
   over: [box('standings', 0, 0, 12, 15), box('map', 0, 15, 12, 9)],
-  out: [box('standings', 0, 0, 12, 12), box('events', 0, 12, 12, 6), box('map', 0, 18, 12, 6)],
+  out: [box('standings', 0, 0, 12, 12), box('events', 0, 12, 12, 6), box('map', 0, 18, 12, 4), box('camera', 0, 22, 12, 2)],
 };
 DEFAULTS_PORTRAIT.practice = DEFAULTS_PORTRAIT.race;
 
@@ -62,8 +73,9 @@ export function savedLayout(saved, session, shape) {
   const g = gridOf(shape), out = [];
   for (const i of list) {
     const m = WIDGETS[i?.id] && minOf(i.id, shape);
-    const ok = m && [i.x, i.y, i.w, i.h].every(Number.isInteger) && i.w >= m.w && i.h >= m.h;
-    if (ok && inside(i, g) && !out.some((o) => o.id === i.id || hit(o, i))) out.push(box(i.id, i.x, i.y, i.w, i.h));
+    const fix = m && WIDGETS[i.id].px ? { ...i, ...m, x: Math.min(i.x, g.cols - m.w), y: Math.min(i.y, g.rows - m.h) } : i;
+    const ok = m && [fix.x, fix.y, fix.w, fix.h].every(Number.isInteger) && fix.w >= m.w && fix.h >= m.h;
+    if (ok && inside(fix, g) && !out.some((o) => o.id === fix.id || hit(o, fix))) out.push(box(fix.id, fix.x, fix.y, fix.w, fix.h));
   }
   return out;
 }
@@ -108,12 +120,14 @@ export function moveItem(items, id, x, y, shape) {
 
 export function resizeItem(items, id, w, h, shape) {
   const i = items.find((o) => o.id === id), m = minOf(id, shape), g = gridOf(shape);
+  if (WIDGETS[id].px) return items;
   return settle(items, { ...i, w: Math.max(m.w, Math.min(g.cols - i.x, w)), h: Math.max(m.h, Math.min(g.rows - i.y, h)) }, g);
 }
 
 /** In the first place it fits: at its usual size, otherwise at the smallest. null: no room left. */
 export function addItem(items, id, shape) {
   const m = minOf(id, shape), g = gridOf(shape);
+  if (WIDGETS[id].px) { const p = nearest(box(id, 0, 0, m.w, m.h), items, g); return p ? [...items, p] : null; }
   const usual = shape === 'portrait' ? box(id, 0, 0, Math.min(g.cols, WIDGETS[id].h * 2), Math.ceil(WIDGETS[id].w / 2)) : box(id, 0, 0, WIDGETS[id].w, WIDGETS[id].h);
   const p = nearest({ ...usual, h: Math.max(usual.h, m.h), w: Math.max(usual.w, m.w) }, items, g) ?? nearest(box(id, 0, 0, m.w, m.h), items, g);
   return p ? [...items, p] : null;

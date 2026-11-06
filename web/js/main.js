@@ -6,7 +6,7 @@ import { fuel } from './fuel.js';
 import { weather } from './weather.js';
 import { laplog } from './laplog.js';
 import { events } from './events.js';
-import { WIDGETS, boardLayout, gridArea, gridOf, sessionKey, shapeOf } from './layout.js';
+import { WIDGETS, boardLayout, gridArea, gridOf, sessionKey, shapeOf, fixedAnchor, rowTracks } from './layout.js';
 import { HEADER, hiddenIn, optOf, orderOf, viewSession } from './columns.js';
 import { camera } from './camera.js';
 
@@ -52,7 +52,7 @@ if (params.get('w')) {
 for (const [w, el] of widgets) w.mount(el, S);
 
 // out of the car the map's place takes turns with Fuel and Weather: arrows on hover (see app.css)
-const SLOTS = ['map', 'fuel', 'weather', 'camera'];
+const SLOTS = ['map', 'fuel', 'weather'];
 function showSlot(k) {
   if (k === 'map') delete document.body.dataset.slot; else document.body.dataset.slot = k;
 }
@@ -94,7 +94,7 @@ function applyLayout() {
   const cards = Object.keys(WIDGETS).map((k) => document.getElementById(ALL[k].id));
   const bottom = board.querySelector('.col-bottom');
   board.style.gridTemplateColumns = list ? `repeat(${g.cols}, minmax(0, 1fr))` : '';
-  board.style.gridTemplateRows = list ? `repeat(${g.rows}, minmax(0, 1fr))` : '';
+  board.style.gridTemplateRows = list ? rowTracks(list, g) : '';
   board.style.gridTemplateAreas = list ? 'none' : '';
   bottom.style.display = list ? 'contents' : '';
   for (const el of cards) {
@@ -104,6 +104,9 @@ function applyLayout() {
     el.style.maxHeight = list ? 'none' : '';
     el.style.display = !list ? '' : i ? 'flex' : 'none';
     el.style.visibility = list ? 'visible' : '';   // the map's place taking turns (data-slot) is the default screen's
+    const end = i && WIDGETS[i.id].px && fixedAnchor(i, g);   // a fixed size inside its cells: see app.css
+    el.style.justifySelf = end ? (end.right ? 'end' : 'start') : '';
+    el.style.alignSelf = end ? (end.bottom ? 'end' : 'start') : '';
   }
 }
 for (const q of [narrow, portrait]) q.addEventListener('change', applyLayout);
