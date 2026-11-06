@@ -22,7 +22,6 @@ const PEN = { dq: 'disqualified', black: 'black flag', repair: 'meatball flag', 
 const MAX_ROWS = 300;   // the latest ones: nobody scrolls through more, and it keeps the page light
 
 const clock = (t) => [t / 3600, (t / 60) % 60, t % 60].map((x) => String(Math.floor(x)).padStart(2, '0')).join(':');
-const when = (t) => new Date(t * 1000).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const stint = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 
 function line(C, e, ref) {
@@ -57,23 +56,18 @@ export const events = {
     prefs.evOff ??= [];   // groups switched off
     prefs.evWho ??= 'me';   // me | focus
     root.innerHTML = `
-      <div class="card-h"><div class="ttl">Race events</div><select class="ev-past" aria-label="Race"><option value="">This session</option></select></div>
+      <div class="card-h"><div class="ttl">Race events</div></div>
       <div class="ev-kinds"><div class="seg ev-who"><button data-who="me">Me</button><button data-who="focus">Focused</button></div>${Object.entries(GROUPS).map(([k, n]) => `<button data-group="${k}">${n}</button>`).join('')}</div>
       <div class="ev-body"></div>
       <div class="ev-live" hidden><span>Replay <b></b> behind live</span><button class="ghost-btn" data-live>Back to live</button></div>`;
     this.body = root.querySelector('.ev-body');
     this.live = root.querySelector('.ev-live');
     this.kinds = root.querySelector('.ev-kinds');
-    this.pick = root.querySelector('.ev-past');
-    this.pick.addEventListener('pointerdown', () => this.races(S));
-    this.pick.addEventListener('change', () => this.open(S, this.pick.value));
-    this.races(S);
     root.addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (!b) return;
       const d = b.dataset;
       if (d.id) {
-        if (this.past) return;   // its replay isn't the one in the sim
         this.on = b.id;
         S.send({ cmd: 'replay', id: Number(d.id) });
         this.body.querySelector('.ev.on')?.classList.remove('on');
@@ -85,26 +79,6 @@ export const events = {
       else if (d.group) { prefs.evOff = prefs.evOff.includes(d.group) ? prefs.evOff.filter((g) => g !== d.group) : [...prefs.evOff, d.group]; savePrefs(); } else return;
       this.update(S);
     });
-  },
-
-  /** The races kept on disk, for the picker. */
-  async races(S) {
-    let list = [];
-    try { list = await fetch('/history').then((r) => (r.ok ? r.json() : [])); } catch { return; }
-    const now = String(S.meta?.subId ?? ''), keep = this.pick.value;
-    this.pick.innerHTML = `<option value="">This session</option>${list.filter((r) => r.key !== now).map((r) => `<option value="${esc(r.key)}">${when(r.saved)} · ${esc(r.track ?? 'Unknown')}${r.p ? ` · P${r.p}` : ''}</option>`).join('')}`;
-    this.pick.value = keep;
-  },
-
-  async open(S, key) {
-    this.past = null;
-    if (key) {
-      const d = await fetch(`/history/${encodeURIComponent(key)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-      if (d) this.past = { events: d.items ?? [], drivers: d.drivers ?? {}, classMap: new Map((d.classes ?? []).map((c) => [c.id, c])), player: d.player };
-    }
-    this.drawn = '';
-    this.root.classList.toggle('past', !!this.past);
-    this.update(S);
   },
 
   list(C, ref) {
@@ -120,10 +94,10 @@ export const events = {
     return `No events with these filters. ${hidden} ${hidden === 1 ? 'event' : 'events'} of ${name} hidden.`;
   },
 
-  rows(S, C, ref) {
+  rows(S, ref) {
     let html = '', lap = null, sn = null;
-    const player = this.past ? this.past.player : S.st?.session?.player;
-    const list = this.list(C, ref);
+    const player = S.st?.session?.player;
+    const list = this.list(S, ref);
     const several = new Set(list.map((e) => e.sn)).size > 1;
     for (const e of list) {
       if (e.sn !== sn) {
@@ -135,9 +109,9 @@ export const events = {
       const mine = e.i === ref ? own(e.i, e.cl) : e.j === ref ? own(e.j, e.cj) : null;
       const at = mine ?? own(e.i, e.cl);
       if (mine > (lap ?? 0)) { lap = mine; html += `<div class="ev-lap">Lap ${lap}</div>`; }
-      const color = C.classMap.get(C.drivers[e.i]?.cls)?.color;
+      const color = S.classMap.get(S.drivers[e.i]?.cls)?.color;
       html += `<button id="ev${e.id}" class="ev ${tone(e, ref)} g-${GROUP_OF[e.k] || 'flag'} k-${e.k}${`ev${e.id}` === this.on ? ' on' : ''}" data-id="${e.id}"${color ? ` style="--cc:${color}"` : ''}>
-        <em>${TAG[e.k] || ''}</em><span>${line(C, e, ref)}</span><time title="${clock(e.t)}">${at ? `L${at}` : clock(e.t)}</time></button>`;
+        <em>${TAG[e.k] || ''}</em><span>${line(S, e, ref)}</span><time title="${clock(e.t)}">${at ? `L${at}` : clock(e.t)}</time></button>`;
     }
     return html;
   },
@@ -145,20 +119,19 @@ export const events = {
   update(S) {
     if (!S.st?.session || (!this.solo && !document.body.hasAttribute('data-out'))) return;
     const s = S.st.session;
-    const C = this.past ?? S;
-    const ref = this.past ? this.past.player : prefs.evWho === 'focus' ? S.st.me?.i : s.player ?? S.st.me?.i;
+    const ref = prefs.evWho === 'focus' ? S.st.me?.i : s.player ?? S.st.me?.i;
     for (const b of this.root.querySelectorAll('[data-who]')) b.classList.toggle('on', b.dataset.who === prefs.evWho);
     for (const b of this.root.querySelectorAll('[data-group]')) b.classList.toggle('on', !prefs.evOff.includes(b.dataset.group));
     const behind = s.behind > 3 ? s.behind : 0;
     this.live.hidden = !behind;
     if (behind) this.live.querySelector('b').textContent = clock(behind);
 
-    const key = [this.past ? 'past' : S.eventsVer, prefs.evOff, ref].join('|');
+    const key = [S.eventsVer, prefs.evOff, ref].join('|');
     if (key === this.drawn) return;
     this.drawn = key;
     const atEnd = this.body.scrollHeight - this.body.scrollTop - this.body.clientHeight < 30;
-    const html = this.rows(S, C, ref);
-    this.body.innerHTML = html || `<div class="ev-none">${this.empty(C, ref)}</div>`;
+    const html = this.rows(S, ref);
+    this.body.innerHTML = html || `<div class="ev-none">${this.empty(S, ref)}</div>`;
     if (atEnd) this.body.scrollTop = this.body.scrollHeight;
   },
 };

@@ -6,7 +6,7 @@ import time
 from conftest import frame, session
 from types import SimpleNamespace
 
-from pitwall.events import REPLAY_LEAD, EventLog, history, past_race, purge
+from pitwall.events import REPLAY_LEAD, EventLog, past_race, purge
 
 
 def setup(engine, drivers=(0, 1, 2), kind="Race", **extra):
@@ -126,6 +126,14 @@ def test_best_lap_jumps_to_the_start_of_the_lap(engine):
     e = kinds(engine, "fast")
     assert len(e) == 1 and e[0]["v"] == 89.0 and e[0]["at"] == round(e[0]["t"] - 89.0, 2)
     assert engine.ev.replay_target(e[0]["id"]) == (0, 0, 1)   # nao ha replay antes do zero
+
+
+def test_a_best_lap_belongs_to_the_lap_that_ended(engine):
+    setup(engine)
+    run(engine, 0, 2, lambda t: racing({0: (5, .5), 1: (5, .2)}, t, best={1: 90.0, 0: 95.0}))
+    run(engine, 2, 4, lambda t: racing({0: (5, .5), 1: (5, .2)}, t, best={1: 89.0 if t >= 3 else 90.0, 0: 95.0}))
+    e = kinds(engine, "fast")[0]
+    assert e["cl"] == engine.ev.lap_of(1) - 1
 
 
 def test_qualify_laps_say_the_position(engine):
@@ -517,15 +525,6 @@ def test_positions_keep_coming_from_the_results_during_a_replay(engine):
 
 def race_file(folder, key, saved, **extra):
     (folder / f"{key}.json").write_text(json.dumps({"saved": saved, "items": [], "meta": {"track": "Spa"}, **extra}), "utf-8")
-
-
-def test_each_race_keeps_its_own_file_and_the_list_shows_them(engine, tmp_path):
-    race_file(tmp_path, "111", 100.0, player=5, items=[{"k": "finish", "i": 5, "p": 3, "sk": "race"}])
-    race_file(tmp_path, "222", 200.0)
-    (tmp_path / "broken.json").write_text("{", "utf-8")
-    h = history(tmp_path)
-    assert [r["key"] for r in h] == ["222", "111"]
-    assert h[1]["p"] == 3 and h[1]["track"] == "Spa" and h[1]["race"]
 
 
 def test_old_races_go_after_30_days(tmp_path):

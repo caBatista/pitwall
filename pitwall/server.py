@@ -11,9 +11,9 @@ from pathlib import Path
 
 from aiohttp import WSMsgType, web
 
-from .camera import HIDE, TEMPORARY, TOOL, WRITABLE
+from .camera import HIDE, KEY_ACCEL, SCENIC, TEMPORARY, TOOL, WRITABLE
 from .engine import Engine
-from .events import history, note, past_race, purge
+from .events import note, purge
 
 # inside the PyInstaller .exe the bundled files live under sys._MEIPASS
 BUNDLE = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
@@ -54,6 +54,10 @@ async def no_cache(request, handler):
     return resp
 
 
+WALK_STEP, WALK_FOR, WALK_TRIES = 0.4, 8.0, 10   # s between jumps; s and jumps to give up
+LAP_IN = 0.4   # s after the line: the lap on screen is already the new one
+
+
 class App:
     def __init__(self, source, engine: Engine, hz: float = 20.0, prefs_path: Path | None = None):
         self.source = source
@@ -66,6 +70,9 @@ class App:
         self._wx_sent = 0.0
         self._connected = False
         self.auto_fuel = None   # (reserve, laps) with Auto fuel on, from the fuel card
+        self._walk, self._walk_car, self._walk_tries, self._walk_guesses = None, None, 0, 0   # the lap being gone to
+        self._walk_t, self._walk_end = 0.0, 0.0
+        self._cam_accel = False   # the tool's key acceleration, off while the sticks are in use
         # each race keeps its events for 30 days; the simulator's are not worth keeping
         self._ev_dir = engine.mapper.dir / "events"
         self._ev_save = source.name != "simulator"
@@ -170,6 +177,8 @@ class App:
             return
         st = self.engine.cam_now
         group, cam, do, n = st.get("g") or 1, st.get("c") or 0, data.get("do"), data.get("n")
+        if (st.get("st") or 0) & SCENIC and do in ("group", "camera", "driver", "car", "stick"):
+            return   # the same lock as iRacing's
         num = (self._driver(st.get("i")) or {}).get("num")
         if do == "group" and isinstance(n, int) and num:
             self.source.cam_switch(num, n, 0)
@@ -179,33 +188,82 @@ class App:
             d = self._driver(n)
             if d and d["num"]:
                 self.source.cam_switch(d["num"], group, cam)
-        elif do == "follow" and n in (-1, -2, -3):
-            self.source.cam_follow(n, group, cam)
+        elif do == "car" and n in (-1, 1):
+            d = self._driver(self.engine.neighbour(st.get("i"), n))
+            if d and d["num"]:
+                self.source.cam_switch(d["num"], group, cam)
         elif do == "speed" and isinstance(n, int) and -16 <= n <= 16:
             self.source.replay_speed(n, bool(data.get("slow")))
         elif do == "search" and isinstance(n, int) and 0 <= n <= 9:
             self.source.replay_jump(n)
-        elif do == "lap" and isinstance(n, int):
+        elif do == "lap" and isinstance(n, int) and n >= 1:
             t = self.engine.lap_start(st.get("i"), n)
-            if t is not None:
-                self.source.replay_at(self.engine.session_num, int(t * 1000))
+            self._walk, self._walk_car, self._walk_tries, self._walk_guesses = n, st.get("i"), 0, 0
+            self._walk_t, self._walk_end = 0.0, time.monotonic() + WALK_FOR
+            if t is not None:   # known: straight there, and the walk only looks that it landed
+                self.source.replay_at(self.engine.now_shown()[0], int((t + LAP_IN) * 1000))
+                self._walk_t = time.monotonic() + WALK_STEP
         elif do == "tool":
             self.cam_tool(bool(data.get("on")), st.get("st") or 0)
-        elif do == "hide":
-            bits = (st.get("st") or 0) & WRITABLE
-            self.source.cam_state(bits | HIDE if data.get("on") else bits & ~HIDE)
         elif do == "stick":
             axes = data.get("axes") or {}
-            if axes and not (st.get("st") or 0) & TOOL:
-                self.cam_tool(True, st.get("st") or 0)
+            state = st.get("st") or 0
+            if axes and not state & TOOL:
+                self.cam_tool(True, state)
+            elif axes and state & KEY_ACCEL:
+                self._cam_accel = True
+                self.source.cam_state(state & WRITABLE & ~KEY_ACCEL)
             self.source.cam_move(axes)
         elif do == "tap":
-            self.source.cam_tap(n)
+            state = st.get("st") or 0
+            if n == "hide" and state & HIDE:   # opened hidden: only the state brings the panels back, and that undoes the edit
+                self.source.cam_state(state & WRITABLE & ~HIDE)
+            else:
+                self.source.cam_tap(n)
+
+    def walk(self):
+        """To a lap whose start isn't known: a jump to about there, then iRacing's own lap jump, which lands just
+        before the line from anywhere in the lap on either side. Then that start is known, for the next time."""
+        e, i, goal, now = self.engine, self._walk_car, self._walk - 1, time.monotonic()
+        if now < self._walk_t:
+            return   # iRacing drops a jump sent right after another
+        place, (session, t) = e.place(i), e.now_shown()
+        self._walk_tries += 1
+        self._walk_t = now + WALK_STEP
+        off = None if place is None else place - goal
+        speed = e.cam_now.get("speed") or 0
+        if now > self._walk_end or self._walk_tries > WALK_TRIES or speed < 0:
+            self._walk = None
+        elif off is not None and (0 <= off < .03 * max(1, speed) or (goal == 0 and off < .15)):
+            self._walk = None
+        elif off is not None and -.03 < off < 0:   # just before the line: the lap on screen would still be the last one
+            e.lap_seen(i, self._walk, t)
+            if speed > 0:   # playing, it goes over the line by itself
+                self._walk = None
+            else:
+                self.source.replay_at(session, int((t + LAP_IN) * 1000))
+        elif goal == 0 and self._walk_guesses >= (1 if off is None else 3):   # before the green there is no line to land on
+            self._walk = None
+        elif off is None or goal == 0 or (abs(off) > 1.5 and self._walk_guesses < 2):
+            self._walk_guesses += 1
+            guess = e.lap_guess(i, self._walk)
+            if guess is None:
+                self._walk = None
+            else:
+                self.source.replay_at(session, int(guess * 1000))
+        else:
+            self.source.replay_jump(5 if off < 0 else 4)
+
 
     def cam_tool(self, on, state):
         """Always with temporary edits: closing the tool puts the camera back, nothing goes to the user's camera file."""
         bits = state & WRITABLE
-        self.source.cam_state(bits | TOOL | TEMPORARY if on else bits & ~TOOL & ~TEMPORARY)
+        if on:
+            self._cam_accel = self._cam_accel or bool(bits & KEY_ACCEL)
+            self.source.cam_state((bits | TOOL | TEMPORARY | HIDE) & ~KEY_ACCEL)   # iRacing can't open it minimized: without its panels
+        else:
+            self.source.cam_state(bits & ~TOOL & ~TEMPORARY | (KEY_ACCEL if self._cam_accel else 0))
+            self._cam_accel = False
 
     def replay(self, event_id):
         """Show an event in the replay. iRacing has no replay with the driver in the car."""
@@ -264,6 +322,8 @@ class App:
         if not self.engine.drivers:
             return
         state = self.engine.update(raw)
+        if self._walk is not None:
+            self.walk()
         if self.engine.pit_in and self.auto_fuel:
             liters = self.engine.fuel_needed(*self.auto_fuel)
             if liters is not None:   # no clean lap yet: the menu stays as it is
@@ -310,15 +370,6 @@ class App:
         app.router.add_get("/prefs", self.prefs_get)
         app.router.add_put("/prefs", self.prefs_put)
 
-        async def races(_):
-            return web.json_response(await asyncio.to_thread(history, self._ev_dir))
-
-        async def race(request):
-            d = await asyncio.to_thread(past_race, self._ev_dir, request.match_info["key"])
-            return web.json_response(d) if d else web.Response(status=404)
-
-        app.router.add_get("/history", races)
-        app.router.add_get("/history/{key}", race)
         app.router.add_static("/", WEB_DIR, show_index=False)
 
         async def start(app_):

@@ -275,8 +275,8 @@ connect();
 // for nothing, data arrives at 20 Hz. The next frame is requested by what needs one (invalidate).
 // only the mounted widgets: with ?w= the others never ran mount()
 let slow = 0;
-const fast = [standings, relative, trackmap].filter((w) => on.has(w));
-const slowW = [fuel, weather, laplog, events, camera].filter((w) => on.has(w));
+const fast = [camera, standings, relative, trackmap].filter((w) => on.has(w));
+const slowW = [fuel, weather, laplog, events].filter((w) => on.has(w));
 // ?hz=10 (desktop: --render-hz 10) caps the panels below the 20 updates/s that arrive; default: no cap
 const minGap = 1000 / (Number(params.get('hz')) || Infinity);
 let drawn = 0, later = 0, settled = false;

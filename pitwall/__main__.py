@@ -7,10 +7,14 @@ from pathlib import Path
 from aiohttp import web
 
 from . import __version__
+from .dev import die_with
 from .engine import Engine
 from .server import App
 from .sources import IRacingSource, MockSource
 from .trackmap import TrackMapper
+
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def lan_ip() -> str:
@@ -37,16 +41,22 @@ def main():
     p.add_argument("--lan", action="store_true", help="listen on your local network (phone/tablet access)")
     p.add_argument("--hz", type=float, default=20.0, help="updates per second sent to the browser")
     p.add_argument("--flip-map", action="store_true", help="mirror the recorded track map")
-    p.add_argument("--maps-dir", default=str(Path(__file__).resolve().parent.parent / "maps"))
+    p.add_argument("--maps-dir", default=str(ROOT / "maps"))
+    p.add_argument("--data", help="folder with settings.json and the maps (default: the project's)")
+    p.add_argument("--dev-parent", type=int, help=argparse.SUPPRESS)   # the window of `Pitwall Dev.bat`: see dev.py
     args = p.parse_args()
+
+    if args.dev_parent:
+        die_with(args.dev_parent)
 
     stypes = {"race": "Race", "qualify": "Open Qualify", "practice": "Practice", "test": "Offline Testing"}
     cam = int(args.mock_cam) if (args.mock_cam or "").isdigit() else args.mock_cam
     source = (MockSource(speed=args.speed, session=stypes[args.mock_session], track_id=args.mock_track,
                          start=args.mock_start, cam=cam, wide=args.mock_wide, out=args.mock_out) if args.mock else IRacingSource())
-    mapper = TrackMapper(args.maps_dir, flip=args.flip_map)
+    data = Path(args.data) if args.data else ROOT
+    mapper = TrackMapper(data / "maps" if args.data else args.maps_dir, flip=args.flip_map, library_dir=ROOT / "maps" / "library")
     engine = Engine(mapper)
-    app = App(source, engine, hz=args.hz, prefs_path=Path(__file__).resolve().parent.parent / "settings.json").build()
+    app = App(source, engine, hz=args.hz, prefs_path=data / "settings.json").build()
 
     host = "0.0.0.0" if args.lan else "127.0.0.1"
     print(f"\n  PITWALL {__version__}  ·  source: {source.name}")

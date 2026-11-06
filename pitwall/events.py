@@ -48,23 +48,6 @@ ON_TRACK, OFF_TRACK = 3, 0
 KEEP_DAYS = 30
 
 
-def history(folder):
-    """The races on disk, newest first, with what it takes to choose one."""
-    out = []
-    for path in Path(folder).glob("*.json"):
-        try:
-            d = json.loads(path.read_text("utf-8"))
-        except (OSError, ValueError):
-            continue
-        items, player = d.get("items") or [], d.get("player")
-        done = [e for e in items if e.get("k") == "finish" and e.get("i") == player]
-        meta = d.get("meta") or {}
-        out.append({"key": path.stem, "saved": d.get("saved"), "track": meta.get("track"), "config": meta.get("config"),
-                    "seriesId": meta.get("seriesId"), "n": len(items), "p": done[-1].get("p") if done else None,
-                    "race": any(e.get("sk") == "race" for e in items)})
-    return sorted(out, key=lambda x: x["saved"] or 0, reverse=True)
-
-
 def past_race(folder, key):
     """One race. key comes from outside: only a plain name reaches the disk."""
     if not re.fullmatch(r"[\w-]+", key or ""):
@@ -102,6 +85,7 @@ class EventLog:
     def __init__(self):
         self.dir = None   # where races are kept; None: nothing is read back
         self.sub = None
+        self.laps = {}   # session -> car -> lap -> when it began: kept with the race, to go straight to a lap
         self._began = 0
         self.items, self.new, self.by_id = [], [], {}
         self.cleared = False   # the list went away (another event): clients start over
@@ -174,7 +158,7 @@ class EventLog:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = f"{path}.tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump({"sub": self.sub, "saved": time.time(), **(info or {}), "items": self.items}, fh, default=str)
+            json.dump({"sub": self.sub, "saved": time.time(), **(info or {}), "items": self.items, "laps": self.laps}, fh, default=str)
         os.replace(tmp, path)
         return path
 
@@ -200,12 +184,15 @@ class EventLog:
     def feed(self, f: SimpleNamespace):
         if f.sub != self.sub:
             self.sub = f.sub
+            self.laps = {}
             self.items, self.new, self.by_id = [], [], {}
             self._seen = {}
             self._began = int(time.time())
             saved = past_race(self.dir, str(f.sub)) if self.dir and f.sub else None
             if saved:
                 self._restore(saved.get("items") or [])
+                self.laps = {int(sn): {int(i): {int(lap): t for lap, t in laps.items()} for i, laps in cars.items()}
+                             for sn, cars in (saved.get("laps") or {}).items()}
             self.cleared = True
             self.ver += 1
             self.sid = None
@@ -342,13 +329,14 @@ class EventLog:
             if fastest:
                 self._cbest[c] = b
             at = f.t - b   # the lap from its start
+            lap = max(1, (self.lap_of(i) or 2) - 1)   # it is known once over the line: the lap that ended, not the one just begun
             if f.kind == "qualify":
                 rank = 1 + sum(1 for k, x in self._best.items() if f.cls[k] == c and x < b)
-                self.add(f.t, "q", i=i, v=round(b, 3), p=rank, pole=fastest, at=round(at, 2))
+                self.add(f.t, "q", i=i, v=round(b, 3), p=rank, pole=fastest, at=round(at, 2), cl=lap)
             elif fastest and cb is not None:
-                self.add(f.t, "fast", i=i, v=round(b, 3), at=round(at, 2))
+                self.add(f.t, "fast", i=i, v=round(b, 3), at=round(at, 2), cl=lap)
             elif prev is not None:
-                self.add(f.t, "pb", i=i, v=round(b, 3), at=round(at, 2))
+                self.add(f.t, "pb", i=i, v=round(b, 3), at=round(at, 2), cl=lap)
 
     def _ok_for_pass(self, f, i):
         return f.surf[i] in (ON_TRACK, OFF_TRACK) and not f.pitr[i] and f.laps_done(i) >= 0 \

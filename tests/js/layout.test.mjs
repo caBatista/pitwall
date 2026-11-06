@@ -124,5 +124,5 @@ test('camera control is a widget like the others, outside every default', () => 
   assert.equal(WIDGETS.camera.name, 'Camera control');
   for (const list of [...Object.values(DEFAULTS), ...Object.values(DEFAULTS_PORTRAIT)]) assert.ok(!at(list, 'camera'));
   const free = [{ id: 'standings', x: 0, y: 0, w: 14, h: 12 }];
-  assert.deepEqual(at(addItem(free, 'camera'), 'camera'), { id: 'camera', x: 14, y: 0, w: 10, h: 8 });
+  assert.deepEqual(at(addItem(free, 'camera'), 'camera'), { id: 'camera', x: 14, y: 0, w: 10, h: 3 });
 });

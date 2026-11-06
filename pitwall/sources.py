@@ -118,11 +118,6 @@ class IRacingSource:
         if self.ir.is_connected:
             self.ir.cam_switch_num(num, group, camera)
 
-    def cam_follow(self, mode, group, camera):
-        """mode: irsdk's csMode, -1 most exciting, -2 leader, -3 incident."""
-        if self.ir.is_connected:
-            self.ir.cam_switch_pos(mode, group, camera)
-
     def cam_state(self, bits):
         if self.ir.is_connected:
             self.ir.cam_set_state(bits)
@@ -143,8 +138,8 @@ class IRacingSource:
             self.ir.replay_search(mode)
 
     def replay_at(self, session, ms):
+        """A moment of the replay, at the speed it is playing."""
         if self.ir.is_connected:
-            self.ir.replay_set_play_speed(1)   # first, as in replay
             self.ir.replay_search_session_time(session, ms)
 
     def _chase(self):
@@ -392,10 +387,6 @@ class MockSource:
     def cam_switch(self, num, group, camera):
         self.cam_group, self.cam_number = group, camera
         self.focus(next((c["idx"] for c in self.cars if str(c["num"]) == str(num)), self.cam), num)
-
-    def cam_follow(self, mode, group, camera):
-        print(f"[mock] camera follows {mode}", flush=True)
-        self.cam_group, self.cam_number = group, camera
 
     def cam_state(self, bits):
         self.cam_bits = bits | (self.cam_bits & 3)

@@ -298,8 +298,8 @@ class Engine:
         self.ev = EventLog()
         self.in_car = False
         self._info = None     # the session info, for the replay's engine
-        self._lap_at = {}     # car -> lap -> session time it began: to go to a lap in the replay
-        self.cam_now, self.session_num = {}, 0
+        self._lap_now = {}    # car -> (laps, time, pct) as last seen: a lap begins when it is seen crossing the line
+        self.cam_now, self.raw_now = {}, {}
         self._live, self._live_at = None, 0.0   # the last frame that was the present
         self._replay = None   # the engine that reads the replay, see update()
         self.wx_hist = deque(maxlen=720)  # 5 s samples = 1 hour
@@ -481,9 +481,46 @@ class Engine:
         return fix
 
     def update(self, raw):
-        self.cam_now = self._cam(raw)
-        self.session_num = raw.get("SessionNum") or 0
+        self.cam_now, self.raw_now = self._cam(raw), raw
         return self._frame(raw)
+
+    def place(self, i):
+        """Where this car is on the moment on screen, in laps (2.5: halfway through lap 3). None: not on track."""
+        laps, pct = self.raw_now.get("CarIdxLapCompleted") or [], self.raw_now.get("CarIdxLapDistPct") or []
+        if not isinstance(i, int) or i >= len(laps) or i >= len(pct) or laps[i] < 0 or pct[i] < 0:
+            return None
+        return laps[i] + pct[i]
+
+    def now_shown(self):
+        """(session, time) of the moment on screen."""
+        raw = self.raw_now
+        return raw.get("SessionNum") or 0, float(raw.get("ReplaySessionTime") or raw.get("SessionTime") or 0.0)
+
+    def lap_guess(self, i, lap):
+        """About when this car began this lap: from the nearest moment known, at a little over its fastest lap.
+        Close is enough, iRacing's own lap jump lands on the line from anywhere within a lap. None: nothing to go by."""
+        sn, t = self.now_shown()
+        fast = next((float(r.get("FastestTime") or 0) for r in (self.sessions.get(sn) or {}).get("ResultsPositions") or [] if r.get("CarIdx") == i), 0.0)
+        known = [(k - 1, v) for k, v in self.ev.laps.get(sn, {}).get(i, {}).items()]
+        if self.place(i) is not None:
+            known.append((self.place(i), t))
+        if fast <= 0 or not known:
+            return None
+        at, when = min(known, key=lambda x: abs(x[0] - (lap - 1)))
+        return max(0.0, when + (lap - 1 - at) * fast * 1.02)
+
+    def lap_seen(self, i, lap, t):
+        """iRacing's own lap jump landed here, right at the line: nothing knows better."""
+        self.ev.laps.setdefault(self.now_shown()[0], {}).setdefault(i, {})[lap] = round(t, 3)
+
+    def neighbour(self, i, step):
+        """The car next to this one on the track, at the moment on screen (the raw frame, even in a replay):
+        step 1 the one ahead, -1 the one behind. Not cars in the pits or out of the world."""
+        pct, pit = self.raw_now.get("CarIdxLapDistPct") or [], self.raw_now.get("CarIdxOnPitRoad") or []
+        on = [c for c in self.drivers if c != i and c < len(pct) and pct[c] >= 0 and not (c < len(pit) and pit[c])]
+        if not on or not isinstance(i, int) or i >= len(pct) or pct[i] < 0:
+            return on[0] if on else None
+        return min(on, key=lambda c: (pct[c] - pct[i]) * step % 1.0)
 
     def _frame(self, raw):
         """A frame of state. While the driver watches the replay all the telemetry is that moment of the
@@ -495,18 +532,21 @@ class Engine:
             st = self._update(raw)
             if behind <= 3:
                 self._live, self._live_at = st, time.monotonic()
-            return st
-        return self._seen_from_replay(raw, behind)
+            return self._finished(st)
+        return self._finished(self._seen_from_replay(raw, behind))
 
-    @staticmethod
-    def _cam(raw):
+    def _cam(self, raw):
         """The camera and the replay, always as they are: nothing here belongs to a moment of the race."""
-        return {"i": raw.get("CamCarIdx"), "g": raw.get("CamGroupNumber"), "c": raw.get("CamCameraNumber"), "st": raw.get("CamCameraState") or 0,
+        i, laps = raw.get("CamCarIdx"), raw.get("CarIdxLapCompleted") or []
+        done = laps[i] if isinstance(i, int) and 0 <= i < len(laps) else -1   # the lap on screen, not the board's
+        return {"i": i, "g": raw.get("CamGroupNumber"), "c": raw.get("CamCameraNumber"), "st": raw.get("CamCameraState") or 0,
+                "lap": done + 1 if done >= 0 else None,
+                "total": max((r.get("LapsComplete") or 0 for r in (self.sessions.get(raw.get("SessionNum")) or {}).get("ResultsPositions") or []), default=0),
                 "speed": raw.get("ReplayPlaySpeed") or 0, "slow": bool(raw.get("ReplayPlaySlowMotion")), "replay": bool(raw.get("IsReplayPlaying"))}
 
     def lap_start(self, i, lap):
-        """When this car began this lap, if it was seen."""
-        return self._lap_at.get(i, {}).get(lap)
+        """When this car began this lap, on the session on screen, if it is known."""
+        return self.ev.laps.get(self.now_shown()[0], {}).get(i, {}).get(lap)
 
     def _seen_from_replay(self, raw, behind):
         if self._replay is None:
@@ -525,6 +565,25 @@ class Engine:
         if session.get("timeRemain") is not None:
             session["timeRemain"] = max(0.0, session["timeRemain"] - (time.monotonic() - self._live_at))
         return self._with_results({**live, "session": session, "cam": self._cam(raw)})
+
+    def _finished(self, st):
+        """The result of a finished race, whatever moment the replay is on: no time left, and the footer is the
+        driver's own end of the race, not the car on camera or that moment."""
+        s = st.get("session") or {}
+        if not s.get("static"):
+            return st
+        session = dict(s, timeRemain=0.0 if s.get("timeRemain") is not None else None)
+        r = next((x for x in (self.sessions.get(s.get("num")) or {}).get("ResultsPositions") or [] if x.get("CarIdx") == self.player), None)
+        car = next((c for c in st["cars"] if c["i"] == self.player), None)
+        if not r or not car:
+            return {**st, "session": session}
+        me = dict(st["me"], i=self.player, cls=car.get("cls", (self.drivers.get(self.player) or {}).get("cls")), p=car.get("p"), cp=car.get("cp"),
+                  lap=r.get("LapsComplete") or st["me"].get("lap"), inc=r.get("Incidents"))
+        if (r.get("FastestTime") or 0) > 0:
+            me["best"] = r["FastestTime"]
+        if (r.get("LastTime") or 0) > 0:
+            me["last"] = r["LastTime"]
+        return {**st, "session": session, "me": me}
 
     def _with_results(self, st):
         """Positions and lap times keep coming in SessionInfo, as each car crosses the line."""
@@ -636,7 +695,7 @@ class Engine:
             self._flag_lap = None
             self._lap_sync = {}
             self._laps, self._seen_last, self._race_laps = {}, None, None
-            self._lap_at = {}
+            self._lap_now = {}
             self._lap_seen = 0
             self._want, self._want_raw = None, None
             self._mylaps, self._my_last, self._fuel_at_line, self._my_lapc = deque(maxlen=60), raw.get("LapLastLapTime"), None, None
@@ -666,8 +725,8 @@ class Engine:
         static = kind == "race" and not live and bool(sess.get("ResultsOfficial") or ended in self._ended)
         if static:
             raw = {**raw, "SessionState": 6}
-            best = [t if (t := float((res.get(i) or {}).get("FastestTime") or -1)) > 0 else b for i, b in enumerate(best)]
-            last = [t if (t := float((res.get(i) or {}).get("LastTime") or -1)) > 0 else x for i, x in enumerate(last)]
+            best = [v if (v := float((res.get(i) or {}).get("FastestTime") or -1)) > 0 else b for i, b in enumerate(best)]
+            last = [v if (v := float((res.get(i) or {}).get("LastTime") or -1)) > 0 else x for i, x in enumerate(last)]
         is_race = kind == "race"
         flag = flag_name(raw.get("SessionFlags"))
         me = int(raw.get("PlayerCarIdx") if raw.get("PlayerCarIdx") is not None else self.player)
@@ -675,7 +734,8 @@ class Engine:
         # map and footer follow it. Mine in the car, whoever I watch otherwise. me stays the player:
         # fuel, pit, incidents and the lap log only exist for the player's own car
         cam = raw.get("CamCarIdx")
-        foc = cam if cam in self.drivers else me
+        # a finished race seen in the replay is the result: nobody on camera is the reference
+        foc = me if static else cam if cam in self.drivers else me
         talk = raw.get("RadioTransmitCarIdx")
 
         present = []
@@ -708,7 +768,12 @@ class Engine:
             laps = lapc[i] if lapc[i] is not None and lapc[i] > -2 else 0
             tot[i] = laps + max(0.0, pct[i]) + self.lap_fix(i, laps, pct[i], t)
             if lapc[i] is not None and lapc[i] >= 0:
-                self._lap_at.setdefault(i, {}).setdefault(lapc[i] + 1, t)
+                # really over the line: not a jump in the replay, not the lap it was on when the app opened
+                was = self._lap_now.get(i)
+                if was and lapc[i] == was[0] + 1 and 0 < t - was[1] < 3 and was[2] > .5 and 0 <= pct[i] < .5:
+                    over = was[1] + (t - was[1]) * (1 - was[2]) / max(1e-6, 1 - was[2] + pct[i])
+                    self.ev.laps.setdefault(raw.get("SessionNum") or 0, {}).setdefault(i, {}).setdefault(lapc[i] + 1, round(over, 3))
+                self._lap_now[i] = (lapc[i], t, pct[i])
 
         # ordering. Race, while racing: live order by distance covered (laps + lap fraction), the
         # way overlays do it - CarIdxPosition only changes when a car crosses the line. Cars not

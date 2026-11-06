@@ -136,17 +136,58 @@ def test_letting_go_of_the_stick_does_not_open_the_tool(engine):
     assert src.calls == [("move", {})]
 
 
-def test_going_to_a_lap_of_the_car_on_camera(engine):
+def crossing(engine, t, lap):
+    """Um carro passando pela linha, como na telemetria."""
+    engine.update(frame({0: (lap, .98), 1: (lap, .98)}, SessionTime=t, IsOnTrack=False, CamCarIdx=1))
+    engine.update(frame({0: (lap + 1, .02), 1: (lap + 1, .02)}, SessionTime=t + 1, IsOnTrack=False, CamCarIdx=1))
+
+
+def test_going_to_a_lap_seen_crossing_the_line(engine):
     src = Source()
     engine.set_session(session([0, 1]))
-    for t, lap in ((10, 4), (100, 5), (200, 6)):
-        engine.update(frame({0: (lap, .5), 1: (lap, .4)}, SessionTime=float(t), IsOnTrack=False, CamCarIdx=1))
+    crossing(engine, 100.0, 5)
     app = App(src, engine)
-    app.camera({"do": "lap", "n": 6})
-    assert src.calls == [("at", 0, 100000)]
+    app.camera({"do": "lap", "n": 7})   # 5 completas -> 6: comecou a volta 7
+    assert src.calls == [("at", 0, 100900)]
+
+
+def test_a_jump_in_the_replay_is_not_a_lap_start(engine):
+    engine.set_session(session([0, 1]))
+    engine.update(frame({0: (5, .98), 1: (5, .98)}, SessionTime=100.0, IsOnTrack=False, CamCarIdx=1))
+    engine.update(frame({0: (6, .02), 1: (6, .02)}, SessionTime=300.0, IsOnTrack=False, CamCarIdx=1))
+    assert engine.lap_start(1, 7) is None
+
+
+def test_a_lap_nobody_saw_starts_by_iracings_own_jump_and_lands_on_the_line(engine):
+    src = Source()
+    src.replay_jump = lambda n: src.calls.append(("jump", n))
+    engine.set_session(session([0, 1]))
+    engine.update(frame({0: (5, .5), 1: (5, .5)}, SessionTime=100.0, IsOnTrack=False, CamCarIdx=1))
+    app = App(src, engine)
+    app.camera({"do": "lap", "n": 7})
+    app.walk()
+    assert src.calls == [("jump", 5)]
     src.calls.clear()
-    app.camera({"do": "lap", "n": 40})   # essa nao foi vista
-    assert not src.calls
+    app._walk_t = 0.0
+    engine.update(frame({0: (5, .999), 1: (5, .999)}, SessionTime=150.0, IsOnTrack=False, CamCarIdx=1, ReplayPlaySpeed=0))
+    app.walk()
+    assert src.calls == [("at", 0, 150400)]
+    assert engine.lap_start(1, 7) == 150.0
+    app._walk_t = 0.0
+    engine.update(frame({0: (6, .004), 1: (6, .004)}, SessionTime=150.4, IsOnTrack=False, CamCarIdx=1, ReplayPlaySpeed=0))
+    app.walk()
+    assert app._walk is None
+
+
+def test_a_lap_far_away_jumps_there_first(engine):
+    src = Source()
+    src.replay_jump = lambda n: src.calls.append(("jump", n))
+    engine.set_session(session([0, 1], results=[{"CarIdx": 1, "Position": 1, "FastestTime": 100.0, "LastTime": 100.0}]))
+    engine.update(frame({0: (5, .0), 1: (5, .0)}, SessionTime=1000.0, IsOnTrack=False, CamCarIdx=1))
+    app = App(src, engine)
+    app.camera({"do": "lap", "n": 16})
+    app.walk()
+    assert src.calls == [("at", 0, 2020000)]   # 10 voltas adiante, a 102 s
 
 
 def test_the_camera_on_the_frame_is_the_present_even_in_a_replay(engine):
@@ -155,3 +196,64 @@ def test_the_camera_on_the_frame_is_the_present_even_in_a_replay(engine):
     st = engine.update(frame({0: (2, .5), 1: (2, .4)}, SessionTime=20.0, IsOnTrack=False, IsReplayPlaying=True, ReplayFrameNumEnd=6000,
                              CamGroupNumber=9, ReplayPlaySpeed=4))
     assert st["cam"]["g"] == 9 and st["cam"]["speed"] == 4 and st["cam"]["replay"]
+
+
+def test_the_sticks_turn_the_key_acceleration_off_and_closing_the_tool_gives_it_back(engine):
+    app, src = out_of_car(engine, st=0x75)   # o estado em que o iRacing estava: ferramenta aberta, aceleracao ligada
+    app.camera({"do": "stick", "axes": {"lon+": 1}})
+    assert not src.calls[0][1] & 0x40 and src.calls[0][1] & 0x4
+    app.camera({"do": "tool", "on": False})
+    assert src.calls[-1][1] & 0x40 and not src.calls[-1][1] & 0x4
+
+
+def test_opening_the_tool_already_goes_without_the_key_acceleration(engine):
+    app, src = out_of_car(engine, st=0x51)
+    app.camera({"do": "tool", "on": True})
+    assert not src.calls[0][1] & 0x40
+
+
+def test_hide_is_a_key_because_any_state_loses_what_the_keys_moved(engine):
+    app, src = out_of_car(engine, st=0x35)
+    app.camera({"do": "tap", "n": "hide"})
+    assert not [c for c in src.calls if c[0] == "state"]
+
+
+def test_opening_the_tool_hides_the_panels_and_the_hide_icon_brings_them_back(engine):
+    app, src = out_of_car(engine, st=0x11)
+    app.camera({"do": "stick", "axes": {"lon+": 1}})
+    assert src.calls[0][1] & 0x8
+    app, src = out_of_car(engine, st=0x3d)
+    app.camera({"do": "tap", "n": "hide"})
+    assert src.calls == [("state", 0x34)]
+
+
+def test_the_arrows_go_to_the_next_car_on_track_not_on_the_board(engine):
+    app, src = out_of_car(engine)
+    raw = {"CarIdxLapDistPct": [.95, .1, .5, -1.0], "CarIdxOnPitRoad": [False, False, False, False]}
+    engine.drivers = {0: {}, 1: {}, 2: {}, 3: {}}
+    engine.raw_now = raw
+    assert engine.neighbour(0, 1) == 1      # passa pela linha
+    assert engine.neighbour(0, -1) == 2
+    assert engine.neighbour(1, 1) == 2
+    raw["CarIdxOnPitRoad"][2] = True
+    assert engine.neighbour(1, 1) == 0
+
+
+def test_a_finished_race_in_the_replay_shows_the_end_on_my_car_not_the_one_on_camera(engine):
+    info = session([0, 1], results=[{"CarIdx": 0, "Position": 2, "ClassPosition": 1, "FastestTime": 99.5, "LastTime": 100.5, "LapsComplete": 9, "Incidents": 6},
+                                    {"CarIdx": 1, "Position": 1, "ClassPosition": 0, "FastestTime": 98.0, "LastTime": 99.0, "LapsComplete": 9}])
+    info["SessionInfo"]["Sessions"][0]["ResultsOfficial"] = 1
+    engine.set_session(info)
+    st = engine.update(frame({0: (4, .5), 1: (4, .4)}, SessionTime=500.0, SessionTimeRemain=900.0, IsOnTrack=False, CamCarIdx=1, IsReplayPlaying=True, ReplayFrameNumEnd=6000))
+    assert st["session"]["static"] and st["session"]["timeRemain"] == 0
+    assert (st["me"]["i"], st["me"]["p"], st["me"]["lap"], st["me"]["best"], st["me"]["inc"]) == (0, 2, 9, 99.5, 6)
+    assert st["cam"]["i"] == 1
+
+
+def test_the_results_of_a_finished_race_do_not_overwrite_the_clock_of_the_frame(engine):
+    info = session([0, 1], results=[{"CarIdx": 1, "Position": 1, "FastestTime": 99.5, "LastTime": 100.5, "LapsComplete": 9}])
+    info["SessionInfo"]["Sessions"][0]["ResultsOfficial"] = 1
+    engine.set_session(info)
+    for t, lap, pct in ((99.0, 4, .98), (100.0, 5, .02)):
+        engine.update(frame({0: (lap, pct), 1: (lap, pct)}, SessionTime=t, IsOnTrack=False, CamCarIdx=1, IsReplayPlaying=True, ReplayFrameNumEnd=6000))
+    assert 99 < engine.lap_start(1, 6) <= 100

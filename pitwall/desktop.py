@@ -3,6 +3,7 @@
     pythonw -m pitwall.desktop            (iRacing)
     pythonw -m pitwall.desktop --mock     (simulator)
     pythonw -m pitwall.desktop --windowed (not full screen)
+    pythonw -m pitwall.desktop --dev      (from the code, on the installed app's data: see dev.py)
 
 The aiohttp server still runs, but inside this process, on 127.0.0.1 and a free port
 picked at start, so it is invisible to the user. The window is a native WebView2
@@ -25,6 +26,7 @@ import webview
 from aiohttp import web
 
 from . import __version__
+from .dev import Dev
 from .engine import Engine
 from .server import App
 from .sources import IRacingSource, MockSource
@@ -35,7 +37,8 @@ FROZEN = getattr(sys, "frozen", False)
 BUNDLE = Path(getattr(sys, "_MEIPASS", ROOT))
 # recorded maps and calibrations must be writable: next to the code when run from source,
 # in the user's profile when installed as an .exe
-DATA = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Pitwall" if FROZEN else ROOT
+DEV = "--dev" in sys.argv   # from the code, but on the user's own settings, maps and events
+DATA = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Pitwall" if FROZEN or DEV else ROOT
 
 
 def free_port() -> int:
@@ -179,6 +182,16 @@ class Api:
             pass
 
 
+def server_cmd(args, port) -> list[str]:
+    """The server of --dev: the same options, in a process of its own."""
+    cmd = [sys.executable, "-u", "-m", "pitwall", "--port", str(port), "--data", str(DATA), "--dev-parent", str(os.getpid())]
+    if args.mock:
+        cmd += ["--mock", "--speed", str(args.speed), "--mock-start", str(args.mock_start)]
+        cmd += ["--mock-cam", str(args.mock_cam)] if args.mock_cam else []
+        cmd += ["--mock-wide"] * args.mock_wide + ["--mock-out"] * args.mock_out
+    return cmd
+
+
 def main():
     p = argparse.ArgumentParser(prog="pitwall-desktop", description="Pitwall desktop app")
     p.add_argument("--mock", action="store_true", help="run on the simulator (no iRacing needed)")
@@ -190,15 +203,20 @@ def main():
     p.add_argument("--settings", action="store_true", help=argparse.SUPPRESS)   # opens with the pop-up, to work on it
     p.add_argument("--windowed", action="store_true", help="start in a window (default: full screen)")
     p.add_argument("--render-hz", type=float, help="redraw the panels at most this many times a second (default: every update)")
+    p.add_argument("--dev", action="store_true", help="the server apart, restarted when the code changes (see dev.py)")
     args = p.parse_args()
 
-    cam = int(args.mock_cam) if (args.mock_cam or "").isdigit() else args.mock_cam
-    source = MockSource(speed=args.speed, start=args.mock_start, cam=cam, wide=args.mock_wide, out=args.mock_out) if args.mock else IRacingSource()
-    engine = Engine(TrackMapper(DATA / "maps", library_dir=BUNDLE / "maps" / "library"))
-    port = free_port()
-    ready = threading.Event()
-    threading.Thread(target=serve, args=(App(source, engine, prefs_path=DATA / "settings.json").build(), port, ready), daemon=True).start()
-    ready.wait(10)
+    port, dev = free_port(), None
+    if args.dev:
+        dev = Dev(server_cmd(args, port), port, DATA / "dev.log")
+        dev.start_server()
+    else:
+        cam = int(args.mock_cam) if (args.mock_cam or "").isdigit() else args.mock_cam
+        source = MockSource(speed=args.speed, start=args.mock_start, cam=cam, wide=args.mock_wide, out=args.mock_out) if args.mock else IRacingSource()
+        engine = Engine(TrackMapper(DATA / "maps", library_dir=BUNDLE / "maps" / "library"))
+        up = threading.Event()
+        threading.Thread(target=serve, args=(App(source, engine, prefs_path=DATA / "settings.json").build(), port, up), daemon=True).start()
+        up.wait(10)
 
     state = load_state()
     state["fullscreen"] = state.get("full", True) and not args.windowed
@@ -206,9 +224,10 @@ def main():
     if screen:
         state["screen"] = [screen.x, screen.y, screen.width, screen.height]
     url = f"http://127.0.0.1:{port}/"
+    board = url + (f"?hz={args.render_hz:g}" if args.render_hz else "")
     api = Api(state, url)
     api._window = webview.create_window(
-        f"Pitwall {__version__}", url + (f"?hz={args.render_hz:g}" if args.render_hz else ""), js_api=api, screen=screen,
+        f"Pitwall {__version__}", board, js_api=api, screen=screen,
         width=1600, height=900, min_size=(960, 600), background_color="#111112",
         fullscreen=state["fullscreen"], text_select=False,
     )
@@ -220,8 +239,13 @@ def main():
         api._edges()
         if args.settings:
             api.settings()
+        if dev:
+            dev.pages = lambda: [(api._window, board)] + ([(api._settings, url + "settings.html")] if api._settings else [])
+            dev.watch()
 
     webview.start(ready)
+    if dev:
+        dev.stop()
 
 
 if __name__ == "__main__":

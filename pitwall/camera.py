@@ -28,10 +28,10 @@ AXES = {   # name: (modifier, key)
     "fov+": (None, CLOSE), "fov-": (None, OPEN),   # ] opens the field of view: seen in the sim, 37.12 -> 37.25
 }
 TAPS = {   # once, not held
-    "step+": (None, (0xBB, 0x0D)), "step-": (None, (0xBD, 0x0C)),
-    "accel": (CTRL, (0x50, 0x19)), "x10": (ALT, (0x50, 0x19)),
+    "hide": (None, (0x20, 0x39)),   # Space. Not the state's bit: any cam_set_state throws away what the keys moved (seen in the sim)
 }
-TOOL, HIDE, TEMPORARY = 0x4, 0x8, 0x20   # CameraState bits
+SCENIC, TOOL, HIDE, TEMPORARY = 0x2, 0x4, 0x8, 0x20   # CameraState bits. SCENIC: iRacing holds the view, nothing picks a camera
+KEY_ACCEL = 0x40              # the tool's acceleration holds a key back for the first ~0.5 s: seen in the sim
 WRITABLE = 0x1FC                         # what a broadcast can change
 
 

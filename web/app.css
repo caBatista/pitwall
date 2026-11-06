@@ -113,7 +113,7 @@ body[data-out][data-slot] .board:not(.solo) > .col-bottom { grid-area: map; grid
 body[data-out][data-slot] .board:not(.solo) #w-map { visibility: hidden; }
 body[data-out][data-slot="fuel"] .board:not(.solo) #w-weather, body[data-out][data-slot="weather"] .board:not(.solo) #w-fuel { display: none; }
 /* a finished race in the replay: the result on the left, only Race Events on the right */
-body[data-static][data-out][data-kind] .board:not(.solo) { grid-template-columns: minmax(620px, 1fr) 1fr; grid-template-rows: minmax(0, 1fr); grid-template-areas: "standings events"; }
+body[data-static][data-out][data-kind] .board:not(.solo) { grid-template-columns: minmax(620px, 1fr) 1fr; grid-template-rows: minmax(0, 1fr) auto; grid-template-areas: "standings events" "standings camera"; }
 body[data-static] #board > #w-map, body[data-static] #board > .col-bottom { display: none; }
 .slot-nav { display: none; position: absolute; top: 9px; left: 50%; transform: translateX(-50%); z-index: 3; gap: 4px; }
 body[data-out] .board:not(.solo) .card:hover > .slot-nav { display: flex; }
@@ -485,38 +485,71 @@ sup.inv { color: var(--accent); font-size: .8em; line-height: 0; margin-left: 1p
 /* out of the car it takes its turn in the place of the map, with room for the sticks */
 body[data-out][data-slot="camera"] .board:not(.solo) #w-camera { display: flex; grid-area: map; }
 body[data-out][data-slot="camera"] .board:not(.solo) > .col-bottom { display: none; }
-body[data-out][data-kind][data-slot="camera"] .board:not(.solo) { grid-template-rows: minmax(0, 1fr) 520px; }
-.cam { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; padding: 0 14px 12px; overflow-y: auto; }
-.cam-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.cam-row label { display: flex; flex: 1 1 110px; flex-direction: column; gap: 3px; min-width: 0; color: var(--dim); font: 500 9.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
-.cam select, .cam input[type=number] { width: 100%; min-width: 0; height: 28px; padding: 3px 7px; border: 1px solid var(--line-2); border-radius: 7px; background: var(--bg-2); color: var(--txt); font: 500 12.5px var(--sans); }
-.cam select option { background: var(--card); color: var(--txt); }
-.cam-h { margin-top: 2px; color: var(--accent); font: 900 13px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; }
-.cam-b { min-width: 30px; height: 28px; padding: 0 9px; border: 1px solid var(--line-2); border-radius: 7px; background: var(--bg-2); color: var(--txt); font: 600 11px var(--mono); cursor: pointer; }
-.cam-b:hover:not(:disabled) { border-color: var(--accent); }
-.cam-b.on { border-color: var(--accent); background: var(--accent); color: var(--ink); }
-.cam-b:disabled { opacity: .35; cursor: default; }
-.cam-sticks { display: flex; flex-wrap: wrap; justify-content: space-around; gap: 12px; }
-.cam-stick { display: flex; flex-direction: column; align-items: center; gap: 5px; color: var(--dim); font: 500 9.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
-.joy { position: relative; width: 110px; height: 110px; border: 1px solid var(--line-2); border-radius: 50%; background: radial-gradient(circle, var(--card-2), var(--bg-2)); touch-action: none; cursor: grab; }
-.joy.v { width: 44px; border-radius: 22px; }
-.joy.h { width: 110px; height: 44px; border-radius: 22px; }
-.joy i { position: absolute; left: 50%; top: 50%; width: 38px; height: 38px; margin: -19px 0 0 -19px; border-radius: 50%; background: var(--accent); box-shadow: 0 2px 8px rgba(0, 0, 0, .5); pointer-events: none; }
-.joy.held { cursor: grabbing; }
+body[data-out][data-kind][data-slot="camera"] .board:not(.solo) { grid-template-rows: minmax(0, 1fr) auto; }
+/* a finished race in the replay: always there, under Race Events */
+body[data-static][data-out] .board:not(.solo) #w-camera { display: flex; grid-area: camera; }
+body[data-static] .slot-nav { display: none !important; }
+.cam { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 14px; flex: 1; min-height: 0; padding: 0 14px 12px; overflow-y: auto; font: 600 12px var(--num); }
+.cam[hidden] { display: none; }
+.cam svg { display: block; width: 15px; height: 15px; fill: currentColor; }
+.cam svg.wide { width: 19px; }
+.cam-main { display: flex; flex-direction: column; gap: 6px; flex: 1 1 340px; min-width: 0; max-width: 620px; }
+.cam-trans, .cam-chip { display: flex; align-items: center; min-width: 0; padding: 2px; border-radius: 9px; background: rgba(255, 255, 255, .045); }
+.cam-trans { height: 36px; }
+.cam-trans > i { flex: none; width: 1px; height: 16px; margin: 0 3px; background: var(--sep); }
+.cam-t, .cam-a { display: grid; place-items: center; min-width: 0; padding: 0; border: 0; border-radius: 7px; background: none; color: var(--dim); cursor: pointer; }
+.cam-t { flex: 1 1 0; height: 100%; }
+.cam-t:hover, .cam-a:hover { background: rgba(255, 255, 255, .08); color: var(--txt); }
+.cam-t.on { background: var(--accent); color: var(--ink); }
+.cam-t span { font: 900 15px/1 var(--display); }
+/* the one amber block: leaning 12 degrees like the bars of the classes, with the icon upright */
+.cam-t.big, .cam-t.big:hover { position: relative; isolation: isolate; flex: 0 0 38px; margin: 0 5px; background: none; color: var(--ink); }
+.cam-t.big::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: 3px; background: var(--accent); transform: skewX(-12deg); }
+.cam-t.big:hover::before { background: var(--accent-deep); }
+.cam-t.big svg { width: 14px; height: 14px; }
+.cam-picks { display: flex; gap: 6px; min-width: 0; }
+.cam-chip { flex: 1 1 0; height: 30px; }
+.cam-chip.lap { flex: 0 0 104px; }
+.cam-chip.driver { flex: 1.6 1 0; }
+.cam-a { flex: none; width: 24px; height: 100%; }
+.cam-a svg { width: 11px; height: 11px; }
+.cam-pick { position: relative; display: flex; align-items: center; justify-content: center; gap: 5px; flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; border-radius: 7px; background: none; color: var(--txt); font: inherit; cursor: pointer; }
+.cam-pick:hover { background: rgba(255, 255, 255, .08); }
+.cam-pick b { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.cam-pick svg { flex: none; width: 9px; height: 9px; color: var(--dim); }
+/* the list of a box: over everything, at the size of the box */
+.cam-menu { position: fixed; z-index: 50; display: flex; flex-direction: column; width: max-content; max-height: 280px; padding: 3px; overflow-y: auto; border-radius: 9px; background: var(--card-2); box-shadow: 0 8px 24px rgba(0, 0, 0, .5); scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+.cam-menu[hidden] { display: none; }
+.cam-menu button { flex: none; padding: 6px 9px; border: 0; border-radius: 7px; background: none; color: var(--txt); font: 600 12px var(--num); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.cam-menu button:hover { background: rgba(255, 255, 255, .08); }
+.cam-menu button.on { color: var(--accent); }
+.cam-pads { display: flex; align-items: center; gap: 12px; flex: none; padding-left: 14px; }
+.cam-pad { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--dim); }
+.cam-pad svg { width: 12px; height: 12px; }
+/* a thumbstick: a well, and a grey cap with a dish in it */
+.thumb { position: relative; width: 56px; height: 56px; border-radius: 50%; background: rgba(255, 255, 255, .045); touch-action: none; cursor: grab; }
+.thumb i { position: absolute; left: 50%; top: 50%; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%; background: radial-gradient(circle, #4a4a4e 30%, #5a5a5f 34%, #3a3a3e 72%, #2d2d30); box-shadow: 0 2px 5px rgba(0, 0, 0, .6); pointer-events: none; }
+/* a DJ fader: a slot, the marks along it, and a flat cap with a line across. It comes back to the middle */
+.fader { position: relative; width: 28px; height: 56px; background: repeating-linear-gradient(to bottom, var(--line) 0 1px, transparent 1px 7.86px); touch-action: none; cursor: grab; }
+.fader::before { content: ''; position: absolute; inset: 0 auto 0 50%; width: 16px; margin-left: -8px; background: var(--card); }
+.fader::after { content: ''; position: absolute; inset: 0 auto 0 50%; width: 4px; margin-left: -2px; border-radius: 2px; background: rgba(255, 255, 255, .1); }
+.fader i { position: absolute; z-index: 1; left: 50%; top: 50%; width: 24px; height: 13px; margin: -6.5px 0 0 -12px; border-radius: 3px; background: linear-gradient(to bottom, #3a3a3e 0 42%, var(--off) 42% 58%, #3a3a3e 58%); box-shadow: 0 2px 4px rgba(0, 0, 0, .6); pointer-events: none; }
+.thumb.held, .fader.held { cursor: grabbing; }
+.cam.scenic .cam-chip:not(.lap), .cam.scenic .cam-pads { opacity: .35; pointer-events: none; }
 .cam-off { padding: 26px 8px; color: var(--dim); text-align: center; }
 
 /* ---------- race events ---------- */
-.ev-past { max-width: 62%; padding: 3px 7px; border: 1px solid var(--line-2); border-radius: 7px; background: var(--bg-2); color: var(--dim); font: 500 11px var(--mono); }
-.ev-past option { background: var(--card); color: var(--txt); }
-#w-events.past .ev-who { display: none; }
-#w-events.past .ev { cursor: default; }
 .ev-kinds { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 14px 8px; }
 .ev-who { margin-right: 6px; }
+.ev-who button { font: 600 11.5px var(--num); letter-spacing: 0; text-transform: none; }
 .ev-kinds button {
-  padding: 3px 9px; border: 1px solid var(--line); border-radius: 7px; background: none; cursor: pointer;
-  color: var(--mute); font: 500 10px var(--mono); letter-spacing: .06em; text-transform: uppercase;
+  padding: 4px 10px; border: 0; border-radius: 7px; background: none; cursor: pointer;
+  color: var(--mute); font: 600 11.5px var(--num);
 }
-.ev-kinds button.on { color: var(--txt); border-color: var(--line-2); background: var(--bg-2); }
+.ev-kinds button:hover { background: rgba(255, 255, 255, .08); color: var(--txt); }
+.ev-kinds button.on { background: rgba(255, 255, 255, .045); color: var(--txt); }
+.ev-kinds .seg { padding: 2px; border: 0; background: rgba(255, 255, 255, .045); }
+.ev-kinds .seg button.on, .ev-kinds .seg button.on:hover { background: var(--accent); color: var(--ink); }
 .ev-body { flex: 1; min-height: 0; overflow-y: auto; margin: 0 8px 10px; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .ev-sess { margin: 12px 6px 2px; padding-top: 9px; border-top: 1px solid var(--line-2); color: var(--txt); font: 900 15px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; }
 .ev-sess:first-child { margin-top: 2px; padding-top: 2px; border-top: 0; }
