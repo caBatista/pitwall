@@ -2,7 +2,7 @@ import { esc, fmt, lapTime, gapText, prefs, savePrefs, flagHtml, makeHtml, talkH
 import { driverActions } from './drivers.js';
 import { CLASS_HEAD, FOOT, STAND, colName, driverName, footFit, optOf, shownIn, standCols, standFit, standGrid, standHead, standNeed, viewSession } from './columns.js';
 
-const ROW = 30, ME = 44;   // .rrow / .rrow.me with its margins, px in the panel's scale
+const ROW = 30, ME = 30;   // .rrow / .rrow.me with its margins, px in the panel's scale
 
 /**
  * The list scrolls a whole row at a time, so nobody is ever cut in half. Which rows show: the class
@@ -54,8 +54,7 @@ function statusHtml(c, off) {
   return c.cb && !off.has('fast') ? ST.fast : '';
 }
 const CELL = {
-  pos: (c, x) => ['rpos', x.pos],
-  num: (c, x) => [x.o.numFree ? 'rcar free' : 'rcar', `<span class="rn">${esc(x.d.num)}</span>`, `--cc:${x.color}`],
+  pos: (c, x) => ['spos', `<span class="sp">${x.pos}</span>${x.o.posNum ? `<span class="sn">${esc(x.d.num)}</span>` : ''}`, `--cc:${x.color}`],
   pg: (c, x) => ['pgc', x.pg],
   make: (c, x) => ['mk', makeHtml(x.d.make)],
   flag: (c, x) => ['fc', flagHtml(x.d.country)],
@@ -190,12 +189,11 @@ export const standings = {
       const fit = standFit(want, prefs.stand, over, innerWidth < 800 ? 0 : this.wide);   // a phone scrolls sideways instead
       this.cols = fit.cols;
       this.o = options(prefs.stand, session);
-      const at = fit.cols.indexOf('num');
-      this.o.numFree = at >= 0 && fit.cols[at - 1] !== 'pos';
+      this.o.posNum = optOf(prefs.stand, STAND, 'pos', 'num');
       this.body.parentElement.style.setProperty('--scols', standGrid(fit.cols, prefs.stand, over));   // not on body: its style is rewritten below
-      const { lead, titles } = standHead(fit.cols);
+      const { lead } = standHead(fit.cols);
       this.lead = lead;
-      this.heads = titles.map((t) => `<div class="${t.a}"${t.span > 1 ? ` style="grid-column:span ${t.span}"` : ''}>${t.title}</div>`).join('');
+      this.heads = '';   // the class header stays alone: Int and Gap are named in the leader's row
       this.classItems = shownIn(prefs.classHead, CLASS_HEAD, session);
       const foot = footFit(shownIn(prefs.standFoot, FOOT, session), this.meBar.clientWidth);
       this.foot = foot.items;
@@ -215,8 +213,8 @@ export const standings = {
       const gi = inGroup ? c.gi : c.gio, li = inGroup ? c.li : c.lio;
       const leader = pos === 1;
       // always behind, so no '+': unsigned gaps
-      const gapTxt = leader ? (isRace ? 'Leader' : '') : gapText(gl, ld, false, o.gapDec);
-      const intTxt = leader ? '' : gapText(gi, li, false, o.intDec);
+      const gapTxt = leader ? '<span class="hd">Gap</span>' : gapText(gl, ld, false, o.gapDec);
+      const intTxt = leader ? '<span class="hd">Int</span>' : gapText(gi, li, false, o.intDec);
       const off = c.srf < 0;
       const [lic, sr] = (d.lic || '').split(' ');
       const gain = isRace ? (inGroup ? c.pgc : c.pg) : null;   // positions gained since the start

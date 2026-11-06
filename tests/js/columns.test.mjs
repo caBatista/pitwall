@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CLASS_HEAD, FOOT, HEADER, STAND, classDefault, colName, driverName, footDefault, footFit, headerDefault, hiddenIn, migrateStand, optOf, orderOf, shownIn, standCols, standDefault, standFit, standGrid, standHead, standNeed, viewSession } from '../../web/js/columns.js';
 
-const TODAY = 'pos,num,pg,make,flag,name,sr,ir,tyre,int,gap,last,best,d1,d2,d3,status';
-const GRID = '34px 32px 22px 40px 22px minmax(110px, 1fr) 52px 84px 26px 58px 58px 70px 70px 38px 38px 38px 54px';
+const TODAY = 'pos,pg,make,flag,name,sr,ir,tyre,int,gap,last,best,d1,d2,d3,status';
+const GRID = '72px 22px 40px 22px minmax(110px, 1fr) 52px 84px 26px 58px 58px 70px 70px 38px 38px 38px 54px';
 
 test('by default the columns are the ones the board always had', () => {
   const cols = standCols(standDefault(), 'race');
@@ -21,7 +21,7 @@ test('nothing saved yet: the defaults', () => {
 
 test('race over shows the results, and it can be changed like any session', () => {
   const cfg = standDefault();
-  assert.equal(standCols(cfg, 'over').join(), 'pos,num,pg,make,flag,name,sr,ir,best,status');
+  assert.equal(standCols(cfg, 'over').join(), 'pos,pg,make,flag,name,sr,ir,best,status');
   cfg.hide.gap = [];
   assert.ok(standCols(cfg, 'over').includes('gap'));
   assert.ok(standGrid(standCols(standDefault(), 'over'), standDefault(), true).includes('80px'));
@@ -53,9 +53,8 @@ test('the tags live in the driver column, they are not columns', () => {
 });
 
 test('the number tucks under the position only right after it', () => {
-  assert.ok(standGrid(['pos', 'num', 'name'], standDefault(), false).startsWith('34px 32px'));
-  assert.ok(standGrid(['pos', 'name', 'num'], standDefault(), false).endsWith('46px'));
-  assert.ok(standGrid(['num', 'pos', 'name'], standDefault(), false).startsWith('46px'));
+  assert.ok(standGrid(['pos', 'name'], standDefault(), false).startsWith('72px'));
+  assert.ok(standGrid(['pos', 'name'], { ...standDefault(), opt: { pos: { num: false } } }, false).startsWith('38px'));
 });
 
 test('options: defaults, and a bad value is ignored', () => {
@@ -81,7 +80,7 @@ test('iRating without the gain and the tyre as text change the width', () => {
 test('a file from before: car splits in three, its choices stay', () => {
   const old = { order: ['gap', 'car', 'name'], hide: { car: ['qualify'], tyre: ['race'] }, deltas: 1 };
   const cfg = migrateStand(old);
-  assert.deepEqual(orderOf(cfg, STAND).slice(0, 6), ['gap', 'num', 'pg', 'make', 'name', 'out']);
+  assert.deepEqual(orderOf(cfg, STAND).slice(0, 6), ['gap', 'pg', 'make', 'name', 'out', 'pit']);
   assert.ok(hiddenIn(cfg, STAND, 'make', 'qualify') && hiddenIn(cfg, STAND, 'tyre', 'race') && hiddenIn(cfg, STAND, 'tyre', 'over'));
   assert.equal(optOf(cfg, STAND, 'delta', 'laps'), 1);
   assert.equal(migrateStand(cfg), cfg);
@@ -155,7 +154,7 @@ test('names of what did not fit', () => {
 
 test('class header: name over the first columns, deltas under one title', () => {
   const h = standHead(standCols(standDefault(), 'race'));
-  assert.equal(h.lead, 8);
+  assert.equal(h.lead, 7);
   assert.deepEqual(h.titles.map((t) => [t.title, t.span]), [['Tyre', 1], ['Int', 1], ['Gap', 1], ['Last', 1], ['Fastest', 1], ['Delta', 3], ['Flag', 1]]);
 });
 
