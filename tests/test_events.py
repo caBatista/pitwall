@@ -472,6 +472,14 @@ def test_the_board_stays_in_the_present_during_a_replay(engine):
     assert back["session"]["behind"] == 0
 
 
+def test_watching_the_replay_is_out_of_the_car_whatever_the_last_live_frame_said(engine):
+    setup(engine)
+    run(engine, 100, 105, lambda t: racing({0: (9, .50), 1: (9, .49)}, t, IsOnTrack=True))
+    assert engine.in_car
+    st = engine.update(seen_in_replay({0: (2, .10), 1: (2, .20)}, 40.0))
+    assert st["session"]["inCar"] is False and not engine.in_car
+
+
 def test_another_session_in_the_replay_does_not_change_the_board(engine):
     setup(engine, kind="Race")
     run(engine, 100, 105, lambda t: racing({0: (9, .50), 1: (9, .49)}, t))
