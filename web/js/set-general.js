@@ -13,7 +13,18 @@ export async function generalPage(root) {
         <label class="st-row"><span>Keep iRacing in full screen<small>When it takes the focus in a window, Pitwall presses Alt+Enter.</small></span>
           <span class="st-sw"><input type="checkbox" id="set-sim-full" ${prefs.simFull !== false ? 'checked' : ''}><i></i></span></label>
       </div>
+    </section>
+    <section class="st-sec">
+      <div class="st-sec-h"><h2>Animations</h2></div>
+      <div class="st-list">
+        <label class="st-row"><span>Animations<small>Position changes, flags in the background and on the tables, radio and pit blink.</small></span>
+          <span class="st-sw"><input type="checkbox" id="set-anim" ${prefs.anim !== false ? 'checked' : ''}><i></i></span></label>
+        <label class="st-row"><span>Position change<small>Picking one shows it on the board.</small></span>
+          <select id="set-posfx" class="st-pick">${[['slide', 'Slide'], ['lift', 'Lift'], ['spring', 'Spring'], ['off', 'None']].map(([v, n]) => `<option value="${v}" ${(prefs.posFx ?? 'slide') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+      </div>
     </section>`);
+  root.querySelector('#set-anim').addEventListener('change', (e) => { prefs.anim = e.target.checked; savePrefs(); });
+  root.querySelector('#set-posfx').addEventListener('change', (e) => { prefs.posFx = e.target.value; savePrefs(); });
   root.querySelector('#set-sim-full').addEventListener('change', (e) => { prefs.simFull = e.target.checked; savePrefs(); });
   if (!api) return;
   const on = await api.get_fullscreen();

@@ -215,6 +215,7 @@ export const fx = { live: false };
 // need box-shadow on the main thread at the display's 165 Hz, for a smaller result on the eye
 export const talkHtml = (on) => {
   if (!on) return '';
+  if (!animOn()) return `<span class="st talk" title="On the radio">${MIC}</span>`;
   fx.live = true;
   const k = (Math.sin(performance.now() / 160) + 1) / 2;
   return `<span class="st talk" title="On the radio" style="transform:scale(${(1 + 0.14 * k).toFixed(3)});box-shadow:0 0 ${(4 + 8 * k).toFixed(1)}px ${(1 + 2 * k).toFixed(1)}px rgba(0,214,90,${(0.35 + 0.4 * k).toFixed(2)})">${MIC}</span>`;
@@ -259,8 +260,8 @@ export function pitHtml(c, kind) {
   if (!c || c.pl == null || (!PIT_ALL && kind !== 'race')) return '';
   const s = Math.max(0, Math.floor(c.pd || 0));
   // in the pits: only the time blinks, filled <-> outlined, once a second
-  if (c.pip) fx.live = true;
-  const fill = c.pip && Math.floor(performance.now() / 1000) % 2 === 0;
+  if (c.pip && animOn()) fx.live = true;
+  const fill = c.pip && (!animOn() || Math.floor(performance.now() / 1000) % 2 === 0);
   const time = s >= 100 * 60 ? '∞' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   return `<span class="pitl"><b>L${c.pl}</b><i${fill ? ' class="on"' : ''}>${time}</i></span>`;
 }
@@ -280,6 +281,7 @@ const FX = new Map();   // key -> {v: last value, t: when it changed}
 const FX_FLAG = 1400;
 // new flag on a car: the chip pops in (big, then settles)
 export function flagFx(key, fl) {
+  if (!animOn()) return '';
   const now = performance.now(), f = FX.get('f' + key);
   if (!f || fl !== f.v) FX.set('f' + key, { v: fl, t: fl && f ? now : 0 });
   const g = FX.get('f' + key), k = 1 - (now - g.t) / FX_FLAG;
@@ -292,6 +294,7 @@ export function flagFx(key, fl) {
 // carries a change to the other window, and is the starting point of what a browser saved before the file.
 const KEY = 'pitwall.prefs.v1';
 const onDisk = await fetch('/prefs').then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
+export const animOn = () => prefs.anim !== false;   // Settings > General: every animation of the board
 export const prefs = (() => {
   let p = onDisk;
   if (!Object.keys(p).length) try { p = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { /* ignore */ }

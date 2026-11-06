@@ -1,4 +1,5 @@
 import { esc, fmt, lapTime, gapText, prefs, savePrefs, flagHtml, makeHtml, talkHtml, tyreHtml, HELMET, OUT, flagFx, irHtml, pitHtml, ST, fitIr, irKeyOf, INV, patchRows } from './util.js';
+import { posFx } from './posfx.js';
 import { driverActions } from './drivers.js';
 import { CLASS_HEAD, FOOT, STAND, colName, driverName, footFit, optOf, shownIn, standCols, standFit, standGrid, standHead, standNeed, viewSession } from './columns.js';
 
@@ -251,6 +252,8 @@ export const standings = {
     }
     if (!rows.length) rows.push({ key: 'none', cls: 'map-note', html: '<b>No cars yet</b>Cars appear here as soon as they are on track.' });
     // the chips are as wide as the widest in the whole field, hidden rows included: measure with them all
+    this.fx ??= posFx(this.body);
+    this.fx.before(st.cars);
     const irKey = irKeyOf(S, st.cars);
     if (irKey + o.irFmt + o.gain !== this.irKey && cols.includes('ir')) {
       patchRows(this.body, rows);
@@ -259,6 +262,7 @@ export const standings = {
     const v = visibleRows(rows, st.me.i, S.drivers, this.room, this.from);
     this.from = v.start; this.max = v.max;
     patchRows(this.body, v.list);
+    this.fx.after();
     const thumb = v.max ? `--tt:${(100 * v.start / v.free).toFixed(1)}%;--th:${(100 * v.slots / v.free).toFixed(1)}%` : '';
     if (thumb !== this.thumb) { this.body.style.cssText = thumb; this.thumb = thumb; }
 

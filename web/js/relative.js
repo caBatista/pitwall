@@ -1,4 +1,5 @@
 import { esc, flagHtml, makeHtml, stHtml, talkHtml, OUT, flagFx, irHtml, pitHtml, fitIr, irKeyOf, INV, patchRows } from './util.js';
+import { posFx } from './posfx.js';
 import { driverActions } from './drivers.js';
 
 // lap time with one decimal: 211.827 -> 3:31.8
@@ -77,7 +78,10 @@ export const relative = {
     // ahead is ordered far → near already; pad on top so the layout never jumps
     const a = [...Array(Math.max(0, n - ahead.length)).fill(null), ...ahead];
     const b = [...behind, ...Array(Math.max(0, n - behind.length)).fill(null)];
+    this.fx ??= posFx(this.body);
+    this.fx.before(st.cars);
     patchRows(this.body, [...a.map((r, k) => row(r, 'ahead', 'a' + k)), meRow, ...b.map((r, k) => row(r, 'behind', 'b' + k))]);
+    this.fx.after();
     // the standings sizes the iRating chips (it has every driver); alone, the relative does
     if (!document.querySelector('#w-standings .irb')) fitIr(this.body, irKeyOf(S, st.cars));
   },

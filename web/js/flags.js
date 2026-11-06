@@ -1,4 +1,4 @@
-import { prefs } from './util.js';
+import { prefs, animOn } from './util.js';
 import { FLAGS as NAMES, flagCfg } from './flagcfg.js';
 
 /**
@@ -21,6 +21,7 @@ function hide() {
   shown = null;
   bg.style.opacity = '';   // the transition in app.css fades it out
   bg.classList.remove('on');
+  delete document.body.dataset.flag;
   if (testing) { testing = null; paint(); }
 }
 
@@ -31,7 +32,8 @@ function show(flag) {
   shown = flag;
   bg.dataset.f = flag;
   bg.classList.add('on');
-  const period = PULSE[flag], t0 = performance.now();
+  document.body.dataset.flag = flag;   // the blocks of the widgets and the track take it too
+  const period = animOn() ? PULSE[flag] : 0, t0 = performance.now() - (animOn() ? 0 : FADE_IN);
   const level = () => {
     const t = performance.now() - t0, wave = period ? LOW + (1 - LOW) * (0.5 + 0.5 * Math.cos((2 * Math.PI * t) / period)) : 1;
     bg.style.opacity = (Math.min(1, t / FADE_IN) * wave).toFixed(3);

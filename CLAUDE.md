@@ -42,6 +42,8 @@ O PC é limitado por CPU, cada % do Pitwall custa fps no sim. O custo está no W
 - Testado sem ganho, não repetir: camada por card (com `will-change: transform` perde LCD e a fração da posição; `zoom` deixa posições fracionárias e as linhas andam 1 px; `will-change: opacity` etc. idem; o `.lay` com origem inteira mantém o LCD, mas não reduz CPU), `contain: strict` nas linhas, scroller promovido. Texto em cinza (`--disable-lcd-text`) economiza ~3 pontos, dentro do ruído.
 - Medição (mock a 1×, 26 carros, 1080p a 165 Hz, % de um núcleo): ~81 antes, ~26–30 depois. O que sobra é principalmente o Int/Gap mudando em todas as linhas (sem Standings: 16). `--render-hz 10` dá ~21. Compare sempre com várias execuções: uma amostra varia ~10 pontos.
 
+- Animações (Configurações > General): `prefs.anim` (`animOn` em util.js) liga e desliga todas (troca de posição, bandeira no fundo e nas tabelas, rádio, pisca do pit); desligada, a informação fica parada. Troca de posição (`posfx.js`, `prefs.posFx`: slide, lift, spring): os blocos dos pilotos andam na vertical do lugar antigo ao novo, um sobe e o outro desce, em `transform`, só enquanto toca. `prefs.posFxBench` (ms entre trocas) só para o bench.
+
 ## Mensagens WS (JSON)
 - `hello {source}`; `drivers {drivers{idx→{i,name,team,num,cls,car,make,country,ir,lic,licColor}}, classes[{id,name,color,est,n,sof}], meta{track,config,lengthKm,turns,incLimit}}`;
   `track {key,status,ver,points[[x,y]...]}`; `wx {hist[[t,air,track,wetness,precip]...]}` (5 s, 1 h);

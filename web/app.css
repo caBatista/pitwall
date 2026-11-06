@@ -164,7 +164,7 @@ body.transparent .card { background: rgba(17, 17, 18, .82); backdrop-filter: blu
   overflow: hidden; flex: 1; min-height: 0; margin: 0 0 10px 8px; padding-right: 8px; border-radius: 10px; position: relative;   /* the rows as wide as ever: the scroll bar has the gap to itself */
 }
 .s-body::after {   /* scroll position: the list moves a row at a time in JS, see visibleRows */
-  content: ""; position: absolute; right: 0; width: 3px; border-radius: 2px; top: var(--tt, 0); height: var(--th, 0); background: var(--line-2);
+  content: ""; position: absolute; right: 0; width: 3px; border-radius: 2px; top: var(--tt, 0); height: var(--th, 0); background: var(--flag-thumb, var(--line-2));
 }
 .ghead { height: 30px; padding-right: 6px; color: var(--dim); }   /* the class alone: grid from .srow */
 .ghead .gl { display: flex; align-items: center; gap: 12px; padding-left: 4px; white-space: nowrap; color: var(--txt); font: 900 13.5px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; }
@@ -216,7 +216,7 @@ svg.tyre.wet { color: var(--blue); }
 .me-bar .kv { min-width: 0; white-space: nowrap; }
 
 /* ---------- relative ---------- */
-.rel-body { margin: 0 8px 10px; border-radius: 6px; overflow: hidden; }  /* rounded as a block, rows are square */
+.rel-body { margin: 0 8px 8px; border-radius: 6px; overflow: hidden; }  /* rounded as a block, rows are square */
 /* pos | [class # make] | flag | name [OUT][status] | SR | iRating | best lap | relative */
 .rrow {
   display: grid; grid-template-columns: 34px 30px 40px 22px minmax(90px, 1fr) 56px 84px 60px 58px; align-items: center; column-gap: 8px;
@@ -332,7 +332,7 @@ svg.tyre.wet { color: var(--blue); }
 .lapt.up, .lapt.down { color: var(--txt); background: transparent; border: 1px solid var(--txt); }   /* on the red/blue row */
 
 /* ---------- map ---------- */
-.map-wrap { position: relative; flex: 1; min-height: 0; }
+.map-wrap { position: relative; flex: 1; min-height: 0; margin-bottom: 8px; }   /* 8: every widget ends on the line of the Standings footer */
 .map-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .map-note {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; color: var(--dim); font-size: 12px; max-width: 260px;
@@ -345,14 +345,14 @@ svg.tyre.wet { color: var(--blue); }
 
 /* ---------- fuel ---------- */
 /* level as a bar, readings as label + value; everything but the big number in Montserrat SemiBold */
-.fuel { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; padding: 2px 14px 14px; font-family: var(--num); }
+.fuel { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; padding: 2px 14px 8px; font-family: var(--num); }
 .fu-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "lvl wheel" "rows wheel"; gap: 12px 10px; align-items: center; }
 .fu-lvl { grid-area: lvl; display: grid; gap: 9px; min-width: 0; }
 .fu-val { display: flex; align-items: baseline; gap: 6px; }
 .fu-val b { font: 900 40px/.82 var(--display); color: var(--accent); }
 .fu-val small { color: var(--dim); font: 600 12px var(--num); }
 .fu-val span { margin-left: auto; color: var(--dim); font: 600 11px var(--num); }
-.fu-bar { height: 10px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.fu-bar { height: 10px; border-radius: 3px; background: var(--card-2-line, var(--line)); overflow: hidden; }
 .fu-bar i { display: block; height: 100%; background: var(--accent); transition: width .4s; }
 .fu-bar i.still { transition: none; }
 .fu-bar i.mid { background: var(--accent-deep); }
@@ -418,7 +418,7 @@ svg.tyre.wet { color: var(--blue); }
 .tyre-btn b { font: 600 10px/1 var(--mono); letter-spacing: .08em; }
 
 /* ---------- weather ---------- */
-.wx { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 14px; padding: 0 14px 8px; }
+.wx { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; align-content: space-between; gap: 3px 14px; padding: 0 14px 8px; }
 #w-weather .card-h { padding-bottom: 4px; min-height: 61px; }   /* the tyre button fits: nothing jumps when it shows */
 .wx-temp { display: flex; align-items: baseline; gap: 6px; }
 .wx-temp b { font: 900 30px/.82 var(--display); }
@@ -429,7 +429,7 @@ svg.tyre.wet { color: var(--blue); }
 .trend { font: 700 11px var(--mono); }
 .trend.up { color: var(--accent); } .trend.down { color: var(--dim); }
 .wet-bar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-top: 6px; }
-.wet-bar i { height: 8px; border-radius: 3px; background: var(--line); }
+.wet-bar i { height: 8px; border-radius: 3px; background: var(--card-2-line, var(--line)); }
 .wet-bar i.on { background: var(--txt); } .wet-bar i.on.dry { background: var(--accent); }
 .compass { position: relative; width: 64px; height: 64px; border-radius: 50%; border: 1px solid var(--line-2); background: radial-gradient(circle, var(--bg-2), transparent 70%); }
 .compass svg { position: absolute; inset: 0; }
@@ -554,7 +554,7 @@ body[data-static] .slot-nav { display: none !important; }
 #w-standings .seg button { color: var(--dim); font: 600 11.5px var(--num); letter-spacing: 0; text-transform: none; }
 #w-standings .seg button.on { color: var(--ink); }
 .ev-kinds .seg button.on, .ev-kinds .seg button.on:hover { background: var(--accent); color: var(--ink); }
-.ev-body { flex: 1; min-height: 0; overflow-y: auto; margin: 0 8px 10px; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+.ev-body { flex: 1; min-height: 0; overflow-y: auto; margin: 0 8px 8px; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .ev-sess { margin: 12px 6px 2px; padding-top: 9px; border-top: 1px solid var(--line-2); color: var(--txt); font: 900 15px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; }
 .ev-sess:first-child { margin-top: 2px; padding-top: 2px; border-top: 0; }
 .ev-lap { padding: 9px 6px 3px; color: var(--accent); font: 900 13px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; }
@@ -621,3 +621,21 @@ body[data-static] .slot-nav { display: none !important; }
 .flag-test [data-flag="checkered"] i { background: repeating-conic-gradient(#fff 0 25%, #000 0 50%) 0 0 / 7px 7px; }
 
 body[data-ai] .rel-body .rrow { grid-template-columns: 34px 30px 40px minmax(90px, 1fr) 60px 58px; }   /* AI race: no country, licence or rating */
+
+body[data-noanim] .fu-bar i, body[data-noanim] .fu-list.slide, body[data-noanim] #flag-bg { transition: none; }
+
+/* the flag on everything else: the little blocks of the widgets and the track on the map. Set once, no pulse */
+:root { --track-edge: #3a3a3e; --track-top: #2a2a2d; }
+body[data-flag="green"] { --flag: #22b455; }
+body[data-flag="yellow"], body[data-flag="debris"] { --flag: #f4b400; }
+body[data-flag="blue"] { --flag: #2f6fe0; }
+body[data-flag="white"], body[data-flag="checkered"] { --flag: #fff; }
+body[data-flag="meatball"] { --flag: #ff7a1a; }
+body[data-flag="black"] { --flag: #000; }
+body[data-flag] {
+  --flag-thumb: color-mix(in srgb, var(--flag) 70%, #3a3a3e);
+  --card-2: color-mix(in srgb, var(--flag) 30%, #1c1c1e); --card-2-line: color-mix(in srgb, var(--flag) 45%, #2c2c2f);
+  --track-edge: color-mix(in srgb, var(--flag) 55%, #3a3a3e); --track-top: color-mix(in srgb, var(--flag) 38%, #2a2a2d);
+}
+.s-body:last-child { margin-bottom: 8px; }   /* the lap log: nothing under it */
+#pc-box::before { content: "\a0"; font: 500 10px var(--mono); }   /* the place of a title: the time on the line of the SOF value */

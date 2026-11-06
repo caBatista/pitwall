@@ -202,10 +202,11 @@ function header() {
   if (el.series.textContent !== series) el.series.textContent = series;
   el.series.hidden = !series;
   el.sof.textContent = m.sof || '–';
+  document.body.toggleAttribute('data-noanim', prefs.anim === false);
   if (!st || !st.session) return;
   const s = st.session;
   const rem = s.timeRemain;
-  el.clk.textContent = clock(rem != null ? rem : st.t);
+  el.clk.textContent = rem != null && rem <= 0 ? 'OVER' : clock(rem != null ? rem : st.t);
   const lap = (st.user ?? st.me).lap;   // the user's, whoever is on camera
   const laps = s.lapsTotal && lap != null ? `Lap ${lap}/${s.lapsTotal}` : lap != null ? `Lap ${lap}` : '';
   el.clkSub.textContent = [s.name || s.type, rem != null ? 'Remaining' : 'Elapsed', laps].filter(Boolean).join(' · ');

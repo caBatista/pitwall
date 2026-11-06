@@ -74,7 +74,7 @@ export const trackmap = {
     const u = this.u;   // size unit, see compute()
     this.off = S.track.offset || 0;
     // the track doesn't change: drawn once on the side, only the cars are drawn on every update
-    const key = [S.track.ver, this.off, this.W, this.H, this.dpr, S.meta.sectors, this.fonts].join('|');
+    const key = [S.track.ver, this.off, this.W, this.H, this.dpr, S.meta.sectors, this.fonts, document.body.dataset.flag].join('|');
     if (key !== this.bgKey) { this.bgKey = key; this.drawTrack(S, pts); }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(this.bg, 0, 0);
@@ -116,14 +116,14 @@ export const trackmap = {
     this.bg.width = this.cv.width; this.bg.height = this.cv.height;
     const ctx = this.bg.getContext('2d'), u = this.u;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    const P = pts.map(this.fit);
+    const P = pts.map(this.fit), css = getComputedStyle(document.body);
 
     // asphalt ribbon
     ctx.lineJoin = ctx.lineCap = 'round';
     const path = () => { ctx.beginPath(); P.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); };
     path(); ctx.strokeStyle = '#111112'; ctx.lineWidth = u * 1.7; ctx.stroke();
-    path(); ctx.strokeStyle = '#3a3a3e'; ctx.lineWidth = u * 1.25; ctx.stroke();
-    path(); ctx.strokeStyle = '#2a2a2d'; ctx.lineWidth = u * 0.9; ctx.stroke();
+    path(); ctx.strokeStyle = css.getPropertyValue('--track-edge'); ctx.lineWidth = u * 1.25; ctx.stroke();
+    path(); ctx.strokeStyle = css.getPropertyValue('--track-top'); ctx.lineWidth = u * 0.9; ctx.stroke();
 
     // sector boundaries (iRacing SplitTimeInfo): an amber tick across the track
     const tick = (pct, len, col, w) => {
