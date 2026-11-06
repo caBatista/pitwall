@@ -257,3 +257,45 @@ def test_the_results_of_a_finished_race_do_not_overwrite_the_clock_of_the_frame(
     for t, lap, pct in ((99.0, 4, .98), (100.0, 5, .02)):
         engine.update(frame({0: (lap, pct), 1: (lap, pct)}, SessionTime=t, IsOnTrack=False, CamCarIdx=1, IsReplayPlaying=True, ReplayFrameNumEnd=6000))
     assert 99 < engine.lap_start(1, 6) <= 100
+
+
+def test_with_the_view_held_on_scenic_only_the_camera_is_locked(engine):
+    app, src = out_of_car(engine, st=0x37)
+    app.camera({"do": "group", "n": 7})
+    app.camera({"do": "stick", "axes": {"lon+": 1}})
+    assert not src.calls
+    app.camera({"do": "driver", "n": 1})
+    assert src.calls[0][0] == "switch"
+
+
+def test_keeping_the_sim_in_full_screen_is_a_setting():
+    from pitwall import simwindow
+    App.apply_prefs({"simFull": False})
+    assert not simwindow.enabled
+    App.apply_prefs({})
+    assert simwindow.enabled
+
+
+def test_reset_sends_the_state_as_it_is_which_drops_the_edit(engine):
+    app, src = out_of_car(engine, st=0x3d)
+    app.camera({"do": "reset"})
+    assert src.calls == [("state", 0x3c)]
+
+
+def test_the_lap_box_is_only_for_races(engine):
+    st = out_of_car(engine)[0].engine.cam_now
+    assert st["race"]
+    engine.sessions[0]["SessionType"] = "Practice"
+    assert not engine._cam({"SessionNum": 0})["race"]
+
+
+def test_the_footer_is_the_user_with_another_car_on_camera(engine):
+    engine.set_session(session([0, 1]))
+    st = engine.update(frame({0: (5, .5), 1: (5, .4)}, IsOnTrack=False, CamCarIdx=1, PlayerCarMyIncidentCount=4))
+    assert st["me"]["i"] == 1 and st["user"]["i"] == 0 and st["user"]["inc"] == 4
+
+
+def test_opened_in_the_replay_the_clock_is_now_not_that_moment(engine):
+    engine.set_session(session([0, 1], kind="Practice"))
+    st = engine.update(frame({0: (5, .5), 1: (5, .4)}, SessionTimeRemain=900.0, IsOnTrack=False, IsReplayPlaying=True, ReplayFrameNumEnd=6000))
+    assert st["session"]["timeRemain"] == 800

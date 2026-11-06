@@ -17,6 +17,7 @@ SETTLE = 0.4   # s it has to stay in front: alt-tabbing past it isn't focusing o
 HOLD = 0.06    # s between key events: sent all at once the sim doesn't see them (tested in iRacing)
 GWL_STYLE, WS_CAPTION = -16, 0x00C00000
 MONITOR_DEFAULTTONEAREST = 2
+enabled = True   # Settings > General
 ALT, ENTER = (0x12, 0x38), (0x0D, 0x1C)   # virtual key, scan code: the sim may read either
 
 
@@ -90,6 +91,7 @@ def watch():
         w = Watch(u.GetForegroundWindow, is_sim, is_windowed, press_alt_enter)
         while True:
             time.sleep(POLL)
-            w.step()
+            if enabled:
+                w.step()
     except Exception as e:  # noqa: BLE001
         print(f"[simwindow] stopped: {e!r}", flush=True)

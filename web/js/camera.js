@@ -29,6 +29,7 @@ const ICONS = {
   end: icon('<path d="M2 3.4 6.8 8 2 12.6zM7.4 3.4 12.2 8l-4.8 4.6z"/><rect x="12.2" y="3" width="1.8" height="10" rx=".5"/>'),
   incBack: wide('<path d="M5 4 1.5 8 5 12" fill="none" stroke="currentColor" stroke-width="1.8"/><path fill-rule="evenodd" d="M13 2.4 19.4 13.6H6.6zM12.2 6.2v4h1.6v-4zm0 4.8v1.4h1.6V11z"/>'),
   incNext: wide('<path d="M15 4 18.5 8 15 12" fill="none" stroke="currentColor" stroke-width="1.8"/><path fill-rule="evenodd" d="M7 2.4 13.4 13.6H.6zM6.2 6.2v4h1.6v-4zm0 4.8v1.4h1.6V11z"/>'),
+  reset: icon('<path d="M3.2 8a4.8 4.8 0 1 0 1.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6.8 1.4 3.2 4.6l4.2 1.3z"/>'),
   live: icon('<circle cx="8" cy="8" r="2"/><path d="M4.6 11.4a4.8 4.8 0 0 1 0-6.8M11.4 4.6a4.8 4.8 0 0 1 0 6.8M2.6 13.4a7.6 7.6 0 0 1 0-10.8M13.4 2.6a7.6 7.6 0 0 1 0 10.8" fill="none" stroke="currentColor" stroke-width="1.4"/>'),
   hide: icon('<path d="M1.4 8S3.8 3.8 8 3.8 14.6 8 14.6 8 12.2 12.2 8 12.2 1.4 8 1.4 8z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="1.9"/><path d="M2.6 13.4 13.4 2.6" stroke="currentColor" stroke-width="1.6"/>'),
   move: icon('<path d="M8 1 5.8 3.6h4.4zM8 15l-2.2-2.6h4.4zM1 8l2.6-2.2v4.4zM15 8l-2.6-2.2v4.4z"/><rect x="7.2" y="3.4" width="1.6" height="9.2"/><rect x="3.4" y="7.2" width="9.2" height="1.6"/>'),
@@ -81,6 +82,7 @@ export const camera = {
             <i></i>
             ${tbtn('live', 'Back to live', 'data-live')}
             ${tbtn('hide', 'Hide the panel in iRacing', 'data-hide')}
+            ${tbtn('reset', 'Reset camera', 'data-do="reset" data-n="0"')}
           </div>
           <div class="cam-picks">
             <div class="cam-chip lap">${arrow(LEFT, 'Previous lap', 'data-lap-step="-1"')}${pick('lap')}${arrow(RIGHT, 'Next lap', 'data-lap-step="1"')}</div>
@@ -134,7 +136,8 @@ export const camera = {
       const next = cam.slow ? SLOW[SLOW.indexOf(speed) + 1] : SLOW[0];
       if (next) go(next, true); else go(1);
     } else if ('lapStep' in d) {
-      if (cam.lap) send({ do: 'lap', n: cam.lap + Number(d.lapStep) });
+      if (!cam.race) send({ do: 'search', n: Number(d.lapStep) > 0 ? 5 : 4 });
+      else if (cam.lap) send({ do: 'lap', n: cam.lap + Number(d.lapStep) });
     } else if ('live' in d) S.send({ cmd: 'replay_live' });
     else if ('hide' in d) {   // a key: iRacing doesn't say whether its panel is showing, so this is what was asked
       send({ do: 'tap', n: 'hide' });
@@ -239,7 +242,7 @@ export const camera = {
     const groups = S.meta?.cameras ?? [];
     const group = groups.find((g) => g.n === cam.g);
     const last = Math.max(cam.lap ?? 1, cam.total ?? 0);
-    const key = JSON.stringify([groups.map((g) => g.n), group?.n, cam.i, cam.lap, last, Object.keys(S.drivers).length]);
+    const key = JSON.stringify([groups.map((g) => g.n), group?.n, cam.i, cam.lap, cam.race, last, Object.keys(S.drivers).length]);
     if (key !== this.key) {
       this.key = key;
       const fill = (name, list, cur) => {
@@ -248,11 +251,12 @@ export const camera = {
       fill('group', groups.map((g) => [g.n, g.name]), cam.g);
       fill('driver', this.cars().map((c) => [c.i, `#${S.drivers[c.i].num} ${S.drivers[c.i].name}`]), cam.i);
       fill('lap', Array.from({ length: last }, (_, k) => [k + 1, `Lap ${k + 1}`]), cam.lap);
-      this.root.querySelector('[data-shown="lap"]').textContent = cam.lap ? `Lap ${cam.lap}` : 'Lap –';
+      this.root.querySelector('[data-shown="lap"]').textContent = !cam.race ? 'Lap' : cam.lap ? `Lap ${cam.lap}` : 'Lap –';   // outside a race iRacing's number isn't in the telemetry
       this.root.querySelector('[data-shown="group"]').textContent = group?.name ?? '–';
       this.root.querySelector('[data-shown="driver"]').textContent = S.drivers[cam.i] ? `#${S.drivers[cam.i].num} ${S.drivers[cam.i].name}` : '–';
     }
     if (performance.now() < this.shown) return;
+    this.root.querySelector('[data-menu="lap"]').disabled = !cam.race;   // elsewhere each driver has laps of their own: only the arrows
     this.box.classList.toggle('scenic', !!(cam.st & 2));   // iRacing holds the view there: only the replay moves
     this.paintSpeed(cam.speed, cam.slow);
     this.root.querySelector('[data-hide]').classList.toggle('on', !this.bar || !!(cam.st & 8));

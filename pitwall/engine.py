@@ -532,6 +532,8 @@ class Engine:
             st = self._update(raw)
             if behind <= 3:
                 self._live, self._live_at = st, time.monotonic()
+            elif st.get("session", {}).get("timeRemain") is not None:   # opened in the replay: now is this far ahead of the screen
+                st = {**st, "session": {**st["session"], "timeRemain": max(0.0, st["session"]["timeRemain"] - behind)}}
             return self._finished(st)
         return self._finished(self._seen_from_replay(raw, behind))
 
@@ -541,6 +543,7 @@ class Engine:
         done = laps[i] if isinstance(i, int) and 0 <= i < len(laps) else -1   # the lap on screen, not the board's
         return {"i": i, "g": raw.get("CamGroupNumber"), "c": raw.get("CamCameraNumber"), "st": raw.get("CamCameraState") or 0,
                 "lap": done + 1 if done >= 0 else None,
+                "race": "race" in str((self.sessions.get(raw.get("SessionNum")) or {}).get("SessionType") or "").lower(),
                 "total": max((r.get("LapsComplete") or 0 for r in (self.sessions.get(raw.get("SessionNum")) or {}).get("ResultsPositions") or []), default=0),
                 "speed": raw.get("ReplayPlaySpeed") or 0, "slow": bool(raw.get("ReplayPlaySlowMotion")), "replay": bool(raw.get("IsReplayPlaying"))}
 
@@ -583,7 +586,7 @@ class Engine:
             me["best"] = r["FastestTime"]
         if (r.get("LastTime") or 0) > 0:
             me["last"] = r["LastTime"]
-        return {**st, "session": session, "me": me}
+        return {**st, "session": session, "me": me, "user": me}
 
     def _with_results(self, st):
         """Positions and lap times keep coming in SessionInfo, as each car crosses the line."""
@@ -963,6 +966,7 @@ class Engine:
 
         # estimated iRating change for everyone (race, within each class, at the current positions)
         ir_gain = None
+        user_gain = None
         if is_race:
             byc = {c["i"]: c for c in cars}
             for g in groups.values():
@@ -971,6 +975,7 @@ class Engine:
                     if cpos.get(i):
                         byc[i]["irg"] = ir_change(self.drivers[i]["ir"], cpos[i], field)
             ir_gain = byc.get(foc, {}).get("irg")
+            user_gain = byc.get(me, {}).get("irg")
 
         # my lap log (test sessions): fuel is split at the line, the lap time arrives just after
         my_fuel = raw.get("FuelLevel")
@@ -1186,6 +1191,13 @@ class Engine:
                 "tod": raw.get("SessionTimeOfDay"), "replay": bool(raw.get("IsReplayPlaying")),
                 "inCar": self.in_car, "behind": round(replay_behind, 1), "num": snum, "player": me,
                 "units": "imperial" if raw.get("DisplayUnits") == 0 else "metric",
+            },
+            # the footer's driver: always the user, whoever is on camera
+            "user": {
+                "i": me, "lap": self._lap_seen, "inc": raw.get("PlayerCarMyIncidentCount"), "cur": raw.get("LapCurrentLapTime"),
+                "delta": raw.get("LapDeltaToBestLap"), "deltaOk": bool(raw.get("LapDeltaToBestLap_OK")),
+                "incPen": self.meta.get("incPen"), "incPenNext": self.meta.get("incPenNext"), "incDq": self.meta.get("incDq"),
+                "irGain": user_gain,
             },
             "me": {
                 "i": foc, "p": overall.get(foc), "cp": cpos.get(foc), "cls": self.drivers.get(foc, {}).get("cls"),

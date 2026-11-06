@@ -263,8 +263,10 @@ export const standings = {
     if (thumb !== this.thumb) { this.body.style.cssText = thumb; this.thumb = thumb; }
 
     // "you" summary bar
-    const m = st.me, mc = st.cars.find((c) => c.i === m.i);
+    // the footer is always the user, whoever the board follows
+    const u = st.user ?? st.me, mc = st.cars.find((c) => c.i === u.i);
     if (mc) {
+      const m = u.i === st.me.i ? st.me : { ...u, last: mc.last, lastx: mc.lastx, best: mc.best };
       // incidents: current / next penalty / DQ; by how far the next limit is: green, white at 12x, amber at 8x, red at 4x
       const inc = m.inc ?? null;
       let pen = m.incPen;

@@ -200,7 +200,8 @@ function header() {
   const s = st.session;
   const rem = s.timeRemain;
   el.clk.textContent = clock(rem != null ? rem : st.t);
-  const laps = s.lapsTotal && st.me.lap != null ? `Lap ${st.me.lap}/${s.lapsTotal}` : st.me.lap != null ? `Lap ${st.me.lap}` : '';
+  const lap = (st.user ?? st.me).lap;   // the user's, whoever is on camera
+  const laps = s.lapsTotal && lap != null ? `Lap ${lap}/${s.lapsTotal}` : lap != null ? `Lap ${lap}` : '';
   el.clkSub.textContent = [s.name || s.type, rem != null ? 'Remaining' : 'Elapsed', laps].filter(Boolean).join(' · ');
 }
 

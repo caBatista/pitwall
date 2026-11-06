@@ -1,14 +1,21 @@
 import { desktop } from './set-screen.js';
+import { prefs, savePrefs } from './util.js';
 
 /** What belongs to the app window: only in the desktop app, a browser has its own. */
 export async function generalPage(root) {
   const shown = root.dataset.shown;
   const api = await desktop();
   if (root.dataset.shown !== shown) return;
-  if (!api) {
-    root.insertAdjacentHTML('beforeend', '<div class="st-none">No settings yet</div>');
-    return;
-  }
+  root.insertAdjacentHTML('beforeend', `
+    <section class="st-sec">
+      <div class="st-sec-h"><h2>iRacing</h2></div>
+      <div class="st-list">
+        <label class="st-row"><span>Keep iRacing in full screen<small>When it takes the focus in a window, Pitwall presses Alt+Enter.</small></span>
+          <span class="st-sw"><input type="checkbox" id="set-sim-full" ${prefs.simFull !== false ? 'checked' : ''}><i></i></span></label>
+      </div>
+    </section>`);
+  root.querySelector('#set-sim-full').addEventListener('change', (e) => { prefs.simFull = e.target.checked; savePrefs(); });
+  if (!api) return;
   const on = await api.get_fullscreen();
   if (root.dataset.shown !== shown) return;
   root.insertAdjacentHTML('beforeend', `

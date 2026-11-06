@@ -11,6 +11,7 @@ from pathlib import Path
 
 from aiohttp import WSMsgType, web
 
+from . import simwindow
 from .camera import HIDE, KEY_ACCEL, SCENIC, TEMPORARY, TOOL, WRITABLE
 from .engine import Engine
 from .events import note, purge
@@ -62,6 +63,10 @@ class App:
     def __init__(self, source, engine: Engine, hz: float = 20.0, prefs_path: Path | None = None):
         self.source = source
         self.prefs_path = prefs_path   # the user's settings; the mock and the sim share them
+        try:
+            self.apply_prefs(json.loads(prefs_path.read_text("utf-8")))
+        except (AttributeError, OSError, ValueError):
+            pass
         self.engine = engine
         self.hz = hz
         self.clients: set[web.WebSocketResponse] = set()
@@ -124,6 +129,11 @@ class App:
         return ws
 
     # ---- the user's settings: a file, because the app's browser storage dies with the window ----
+    @staticmethod
+    def apply_prefs(data):
+        """The settings the server itself acts on."""
+        simwindow.enabled = data.get("simFull", True) is not False
+
     async def prefs_get(self, _):
         try:
             return web.json_response(json.loads(self.prefs_path.read_text("utf-8")))
@@ -137,6 +147,7 @@ class App:
             data = None
         if not isinstance(data, dict):
             raise web.HTTPBadRequest()
+        self.apply_prefs(data)
         if self.prefs_path:
             tmp = self.prefs_path.with_suffix(".tmp")
             self.prefs_path.parent.mkdir(parents=True, exist_ok=True)
@@ -177,7 +188,7 @@ class App:
             return
         st = self.engine.cam_now
         group, cam, do, n = st.get("g") or 1, st.get("c") or 0, data.get("do"), data.get("n")
-        if (st.get("st") or 0) & SCENIC and do in ("group", "camera", "driver", "car", "stick"):
+        if (st.get("st") or 0) & SCENIC and do in ("group", "camera", "stick"):
             return   # the same lock as iRacing's
         num = (self._driver(st.get("i")) or {}).get("num")
         if do == "group" and isinstance(n, int) and num:
@@ -214,6 +225,8 @@ class App:
                 self._cam_accel = True
                 self.source.cam_state(state & WRITABLE & ~KEY_ACCEL)
             self.source.cam_move(axes)
+        elif do == "reset":   # any state throws away what the keys moved: seen in the sim
+            self.source.cam_state((st.get("st") or 0) & WRITABLE)
         elif do == "tap":
             state = st.get("st") or 0
             if n == "hide" and state & HIDE:   # opened hidden: only the state brings the panels back, and that undoes the edit

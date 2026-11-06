@@ -509,6 +509,8 @@ body[data-static] .slot-nav { display: none !important; }
 .cam-t.big svg { width: 14px; height: 14px; }
 .cam-picks { display: flex; gap: 6px; min-width: 0; }
 .cam-chip { flex: 1 1 0; height: 30px; }
+.cam-pick:disabled { background: none; cursor: default; }
+.cam-pick:disabled svg { display: none; }
 .cam-chip.lap { flex: 0 0 104px; }
 .cam-chip.driver { flex: 1.6 1 0; }
 .cam-a { flex: none; width: 24px; height: 100%; }
@@ -535,7 +537,7 @@ body[data-static] .slot-nav { display: none !important; }
 .fader::after { content: ''; position: absolute; inset: 0 auto 0 50%; width: 4px; margin-left: -2px; border-radius: 2px; background: rgba(255, 255, 255, .1); }
 .fader i { position: absolute; z-index: 1; left: 50%; top: 50%; width: 24px; height: 13px; margin: -6.5px 0 0 -12px; border-radius: 3px; background: linear-gradient(to bottom, #3a3a3e 0 42%, var(--off) 42% 58%, #3a3a3e 58%); box-shadow: 0 2px 4px rgba(0, 0, 0, .6); pointer-events: none; }
 .thumb.held, .fader.held { cursor: grabbing; }
-.cam.scenic .cam-chip:not(.lap), .cam.scenic .cam-pads { opacity: .35; pointer-events: none; }
+.cam.scenic .cam-chip:not(.lap, .driver), .cam.scenic .cam-pads { opacity: .35; pointer-events: none; }
 .cam-off { padding: 26px 8px; color: var(--dim); text-align: center; }
 
 /* ---------- race events ---------- */
