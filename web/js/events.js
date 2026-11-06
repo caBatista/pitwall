@@ -1,4 +1,6 @@
 import { esc, lapTime, prefs, savePrefs } from './util.js';
+import { camera } from './camera.js';
+import { driverMenu } from './drivers.js';
 
 /**
  * Race Events: for when the driver is out of the car. My session, whatever car is on camera; the
@@ -63,6 +65,15 @@ export const events = {
     this.body = root.querySelector('.ev-body');
     this.live = root.querySelector('.ev-live');
     this.kinds = root.querySelector('.ev-kinds');
+    // right click: message the other driver of the event, as on the standings
+    root.addEventListener('contextmenu', (e) => {
+      const ev = S.events?.find((x) => `ev${x.id}` === e.target.closest('.ev')?.id);
+      if (!ev) return;
+      const me = S.st?.session?.player, who = [ev.j, ev.i].find((i) => i != null && i !== me);
+      if (who == null) return;
+      e.preventDefault();
+      driverMenu(e, S, who, () => camera.showPanel());
+    });
     root.addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (!b) return;

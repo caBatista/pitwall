@@ -18,6 +18,8 @@ HOLD = 0.06    # s between key events: sent all at once the sim doesn't see them
 GWL_STYLE, WS_CAPTION = -16, 0x00C00000
 MONITOR_DEFAULTTONEAREST = 2
 enabled = True   # Settings > General
+only_car = False   # ...or only with the driver in the car
+in_car = False    # from the server, each frame
 ALT, ENTER = (0x12, 0x38), (0x0D, 0x1C)   # virtual key, scan code: the sim may read either
 
 
@@ -89,9 +91,13 @@ def watch():
     try:
         u, _ = _api()
         w = Watch(u.GetForegroundWindow, is_sim, is_windowed, press_alt_enter)
+        was = False
         while True:
             time.sleep(POLL)
-            if enabled:
+            if enabled and (in_car or not only_car):
+                if only_car and not was:
+                    w.last = None   # getting in the car counts as the sim taking the focus
                 w.step()
+            was = in_car
     except Exception as e:  # noqa: BLE001
         print(f"[simwindow] stopped: {e!r}", flush=True)

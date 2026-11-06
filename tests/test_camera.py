@@ -322,9 +322,9 @@ def test_the_keys_are_the_ones_the_user_has_in_iracing():
     keys = keymap.parse(entry(b"PIDVIDFocusNextCar", 6, 0x4B, 0) + entry(b"CamAltInc", 0x1F, 0x49, 0x0C) + entry(b"Gone", 3, 0x10, 0) + entry(b"CamFOVInc", 0x1F, 0x78, 0))
     assert keys == {"FocusNextCar": (0, 0x4B), "CamAltInc": (0x0C, 0x49)}
     sent = []
-    CamKeys(lambda down, key: sent.append((down, key[0])), keys=keys).tap("car+")
+    CamKeys(lambda down, key: sent.append((down, key[0])), keys=keys)._tap("car+")
     assert sent == [(True, 0x4B), (False, 0x4B)]
     k = CamKeys(lambda down, key: sent.append((down, key[0])), keys={})
     sent.clear()
-    k.tap("car-")
+    k._tap("car-")
     assert sent == [(True, 0x10), (True, 0x56), (False, 0x56), (False, 0x10)]

@@ -11,7 +11,7 @@ export async function generalPage(root) {
       <div class="st-sec-h"><h2>iRacing</h2></div>
       <div class="st-list">
         <label class="st-row"><span>Keep iRacing in full screen<small>When it takes the focus in a window, Pitwall presses Alt+Enter.</small></span>
-          <span class="st-sw"><input type="checkbox" id="set-sim-full" ${prefs.simFull !== false ? 'checked' : ''}><i></i></span></label>
+          <select id="set-sim-full" class="st-pick">${[['on', 'Always'], ['car', 'Only in the car'], ['off', 'Off']].map(([v, n]) => `<option value="${v}" ${(prefs.simFull === false ? 'off' : prefs.simFull === 'car' ? 'car' : 'on') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
       </div>
     </section>
     <section class="st-sec">
@@ -25,7 +25,7 @@ export async function generalPage(root) {
     </section>`);
   root.querySelector('#set-anim').addEventListener('change', (e) => { prefs.anim = e.target.checked; savePrefs(); });
   root.querySelector('#set-posfx').addEventListener('change', (e) => { prefs.posFx = e.target.value; savePrefs(); });
-  root.querySelector('#set-sim-full').addEventListener('change', (e) => { prefs.simFull = e.target.checked; savePrefs(); });
+  root.querySelector('#set-sim-full').addEventListener('change', (e) => { prefs.simFull = { on: true, car: 'car', off: false }[e.target.value]; savePrefs(); });
   if (!api) return;
   const on = await api.get_fullscreen();
   if (root.dataset.shown !== shown) return;

@@ -164,7 +164,7 @@ body.transparent .card { background: rgba(17, 17, 18, .82); backdrop-filter: blu
   overflow: hidden; flex: 1; min-height: 0; margin: 0 0 10px 8px; padding-right: 8px; border-radius: 10px; position: relative;   /* the rows as wide as ever: the scroll bar has the gap to itself */
 }
 .s-body::after {   /* scroll position: the list moves a row at a time in JS, see visibleRows */
-  content: ""; position: absolute; right: 0; width: 3px; border-radius: 2px; top: var(--tt, 0); height: var(--th, 0); background: var(--flag-thumb, var(--line-2));
+  content: ""; position: absolute; right: 0; width: 3px; border-radius: 2px; top: var(--tt, 0); height: var(--th, 0); background: var(--flag-thumb);
 }
 .ghead { height: 30px; padding-right: 6px; color: var(--dim); }   /* the class alone: grid from .srow */
 .ghead .gl { display: flex; align-items: center; gap: 12px; padding-left: 4px; white-space: nowrap; color: var(--txt); font: 900 13.5px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; }
@@ -352,7 +352,7 @@ svg.tyre.wet { color: var(--blue); }
 .fu-val b { font: 900 40px/.82 var(--display); color: var(--accent); }
 .fu-val small { color: var(--dim); font: 600 12px var(--num); }
 .fu-val span { margin-left: auto; color: var(--dim); font: 600 11px var(--num); }
-.fu-bar { height: 10px; border-radius: 3px; background: var(--card-2-line, var(--line)); overflow: hidden; }
+.fu-bar { height: 10px; border-radius: 3px; background: var(--card-2-line); overflow: hidden; }
 .fu-bar i { display: block; height: 100%; background: var(--accent); transition: width .4s; }
 .fu-bar i.still { transition: none; }
 .fu-bar i.mid { background: var(--accent-deep); }
@@ -429,7 +429,7 @@ svg.tyre.wet { color: var(--blue); }
 .trend { font: 700 11px var(--mono); }
 .trend.up { color: var(--accent); } .trend.down { color: var(--dim); }
 .wet-bar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-top: 6px; }
-.wet-bar i { height: 8px; border-radius: 3px; background: var(--card-2-line, var(--line)); }
+.wet-bar i { height: 8px; border-radius: 3px; background: var(--card-2-line); }
 .wet-bar i.on { background: var(--txt); } .wet-bar i.on.dry { background: var(--accent); }
 .compass { position: relative; width: 64px; height: 64px; border-radius: 50%; border: 1px solid var(--line-2); background: radial-gradient(circle, var(--bg-2), transparent 70%); }
 .compass svg { position: absolute; inset: 0; }
@@ -479,7 +479,7 @@ sup.inv { color: var(--accent); font-size: .8em; line-height: 0; margin-left: 1p
 body { background: var(--card); }
 .me-bar { margin: 0 8px 8px; border: 0; border-radius: 10px; background: rgba(255, 255, 255, .045); }
 .card-h > .ttl { display: none; }
-.card-h:not(:has(> :not(.ttl))) { display: none; }
+.card-h:not(:has(> :not(.ttl):not(:empty))) { display: none; }
 /* ---------- camera control ---------- */
 #w-camera { display: none; }
 .board.solo #w-camera { display: flex; }
@@ -596,7 +596,7 @@ body[data-static] .slot-nav { display: none !important; }
 }
 
 /* ---------- race flags: the background behind the whole board (flags.js). Fades once, nothing keeps animating ---------- */
-#flag-bg { position: fixed; inset: -40px; z-index: -1; pointer-events: none; opacity: 0; transition: opacity 1.2s; }
+#flag-bg { position: fixed; inset: -40px; z-index: -1; pointer-events: none; opacity: 0; transition: opacity 3s cubic-bezier(.3, 0, .2, 1); }
 #flag-bg.on { transition: none; will-change: opacity; }   /* its opacity comes from flags.js */
 #flag-bg[data-f="green"] { background: color-mix(in srgb, #22b455 34%, var(--card)); }
 #flag-bg[data-f="yellow"] { background: color-mix(in srgb, #f4b400 36%, var(--card)); }
@@ -625,7 +625,15 @@ body[data-ai] .rel-body .rrow { grid-template-columns: 34px 30px 40px minmax(90p
 body[data-noanim] .fu-bar i, body[data-noanim] .fu-list.slide, body[data-noanim] #flag-bg { transition: none; }
 
 /* the flag on everything else: the little blocks of the widgets and the track on the map. Set once, no pulse */
-:root { --track-edge: #3a3a3e; --track-top: #2a2a2d; }
+@property --card-2 { syntax: '<color>'; inherits: true; initial-value: #1c1c1e; }
+@property --card-2-line { syntax: '<color>'; inherits: true; initial-value: #2c2c2f; }
+@property --flag-thumb { syntax: '<color>'; inherits: true; initial-value: #3a3a3e; }
+@property --track-edge { syntax: '<color>'; inherits: true; initial-value: #3a3a3e; }
+@property --track-top { syntax: '<color>'; inherits: true; initial-value: #2a2a2d; }
+:root { --track-edge: #3a3a3e; --track-top: #2a2a2d; --card-2-line: var(--line); --flag-thumb: var(--line-2); }
+/* leaving a flag, once: the rule without [data-flag] is the one that counts when it goes */
+body { transition: --card-2 3s ease-out, --card-2-line 3s ease-out, --flag-thumb 3s ease-out, --track-edge 3s ease-out, --track-top 3s ease-out; }
+body[data-flag], body[data-noanim] { transition: none; }
 body[data-flag="green"] { --flag: #22b455; }
 body[data-flag="yellow"], body[data-flag="debris"] { --flag: #f4b400; }
 body[data-flag="blue"] { --flag: #2f6fe0; }

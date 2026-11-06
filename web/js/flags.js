@@ -10,9 +10,12 @@ import { FLAGS as NAMES, flagCfg } from './flagcfg.js';
 const TEST_CHECKERED = 6000;
 const SLOW = 2400, FAST = 900;   // ms a pulse
 const PULSE = { black: FAST, white: SLOW, meatball: SLOW, blue: SLOW, checkered: SLOW, debris: SLOW, green: FAST, yellow: FAST };
+// seen for a moment around the green and the checkered: these two show only if they stay
+const BRIEF = new Set(['blue', 'yellow']), SETTLE_MS = 700, FADE_OUT = 3000;
 const STEP = 50, LOW = 0.45, FADE_IN = 300;
 
 const bg = document.getElementById('flag-bg'), bar = document.getElementById('flag-test');
+let faded = 0, waiting = null, since = 0;   // a flag of a moment isn't shown, see BRIEF
 let real = null, testing = null, timer = 0, pulse = 0, shown = null, ending = false;
 
 function hide() {
@@ -21,6 +24,11 @@ function hide() {
   shown = null;
   bg.style.opacity = '';   // the transition in app.css fades it out
   bg.classList.remove('on');
+  if ('flag' in document.body.dataset && animOn()) {   // the map redraws its track while the colours come back
+    document.body.toggleAttribute('data-flagfade', true);
+    clearTimeout(faded);
+    faded = setTimeout(() => document.body.removeAttribute('data-flagfade'), FADE_OUT);
+  }
   delete document.body.dataset.flag;
   if (testing) { testing = null; paint(); }
 }
@@ -32,6 +40,8 @@ function show(flag) {
   shown = flag;
   bg.dataset.f = flag;
   bg.classList.add('on');
+  clearTimeout(faded);
+  document.body.removeAttribute('data-flagfade');
   document.body.dataset.flag = flag;   // the blocks of the widgets and the track take it too
   const period = animOn() ? PULSE[flag] : 0, t0 = performance.now() - (animOn() ? 0 : FADE_IN);
   const level = () => {
@@ -53,7 +63,14 @@ function paint() {
 export function setFlag(flag, home) {
   const cfg = flagCfg(prefs);   // Settings > Race flags; the test buttons still work
   if (!cfg.on || (flag && !cfg.items[flag].on)) flag = null;
+  if (flag === real) waiting = null;
+  else if (BRIEF.has(flag) && !testing) {
+    const now = performance.now();
+    if (flag !== waiting) { waiting = flag; since = now; }
+    if (now - since < SETTLE_MS) return;
+  }
   if (flag !== real) {
+    waiting = null;
     real = flag;
     ending = false;
     if (!testing) show(flag);

@@ -58,6 +58,14 @@ function nextSpeed(speed, dir) {
 }
 
 export const camera = {
+  /** The chat is part of iRacing's panel: brings it back if it was hidden. True if it had to. */
+  showPanel() {
+    const cam = this.S?.st?.cam;
+    if (this.bar && !(cam?.st & 8)) return false;
+    this.S.send({ cmd: 'cam', do: 'tap', n: 'hide' });
+    if (!(cam?.st & 8)) this.bar = true;
+    return true;
+  },
   id: 'w-camera',
   mount(root, S) {
     this.root = root; this.S = S; this.key = ''; this.shown = 0; this.bar = true;

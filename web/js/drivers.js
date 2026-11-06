@@ -12,7 +12,8 @@ function close() {
   menu = null;
 }
 
-function open(e, S, i) {
+/** before: what to do first, when an item is picked. */
+export function driverMenu(e, S, i, before) {
   close();
   const d = S.drivers[i];
   if (!d) return;
@@ -23,7 +24,7 @@ function open(e, S, i) {
   menu.innerHTML = items.map(([to, label]) => `<button data-to="${to}">${label}</button>`).join('');
   menu.addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-to]');
-    if (b) S.send({ cmd: 'chat', i, to: b.dataset.to });
+    if (b) { const wait = before?.() ? 200 : 0; setTimeout(() => S.send({ cmd: 'chat', i, to: b.dataset.to }), wait); }
     close();
   });
   document.body.appendChild(menu);
@@ -43,7 +44,7 @@ export function driverActions(root, S) {
     const r = e.target.closest('.rrow[data-i]');
     if (!r) return;
     e.preventDefault();
-    open(e, S, Number(r.dataset.i));
+    driverMenu(e, S, Number(r.dataset.i));
   });
 }
 

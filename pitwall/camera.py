@@ -65,6 +65,7 @@ class CamKeys:
     PERIOD = 0.12
     TICK = 0.03
     DEADMAN = 0.4
+    HOLD = 0.05
     FULL = 0.95   # from here on the key just stays down
 
     def __init__(self, send=post_key, clock=time.monotonic, keys=None):
@@ -87,14 +88,21 @@ class CamKeys:
             self._thread.start()
 
     def tap(self, name):
-        if name not in TAPS:
-            return
+        if name in TAPS:
+            threading.Thread(target=self._tap, args=(name,), daemon=True).start()   # never holds the frame loop
+
+    def _tap(self, name):
+        """With time between the keys: the sim reads them once a frame, and a modifier let go in the same frame is
+        not seen, so Shift+V was just V."""
         mod, key = binding(name, TAPS[name], self._keys)
         if mod:
             self._send(True, mod)
+            time.sleep(self.HOLD)
         self._send(True, key)
+        time.sleep(self.HOLD)
         self._send(False, key)
         if mod:
+            time.sleep(self.HOLD)
             self._send(False, mod)
 
     def _run(self):

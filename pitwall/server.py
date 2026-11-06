@@ -133,7 +133,8 @@ class App:
     @staticmethod
     def apply_prefs(data):
         """The settings the server itself acts on."""
-        simwindow.enabled = data.get("simFull", True) is not False
+        full = data.get("simFull", True)
+        simwindow.enabled, simwindow.only_car = full is not False, full == "car"
 
     async def prefs_get(self, _):
         try:
@@ -332,6 +333,7 @@ class App:
         if not self.engine.drivers:
             return
         state = self.engine.update(raw)
+        simwindow.in_car = self.engine.in_car
         if self._walk is not None:
             self.walk()
         if self.engine.pit_in and self.auto_fuel:

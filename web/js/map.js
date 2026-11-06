@@ -74,7 +74,7 @@ export const trackmap = {
     const u = this.u;   // size unit, see compute()
     this.off = S.track.offset || 0;
     // the track doesn't change: drawn once on the side, only the cars are drawn on every update
-    const key = [S.track.ver, this.off, this.W, this.H, this.dpr, S.meta.sectors, this.fonts, document.body.dataset.flag].join('|');
+    const key = [S.track.ver, this.off, this.W, this.H, this.dpr, S.meta.sectors, this.fonts, document.body.hasAttribute('data-flagfade') ? getComputedStyle(document.body).getPropertyValue('--track-top') : document.body.dataset.flag].join('|');
     if (key !== this.bgKey) { this.bgKey = key; this.drawTrack(S, pts); }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(this.bg, 0, 0);
