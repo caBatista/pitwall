@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULTS, DEFAULTS_PORTRAIT, WIDGETS, addItem, boardLayout, gridArea, gridOf, layoutFor, moveItem, resizeItem, rowTracks, saveLayout, savedLayout, sessionKey, shapeOf } from '../../web/js/layout.js';
+import { DEFAULTS, DEFAULTS_PORTRAIT, WIDGETS, addItem, boardLayout, gridArea, gridOf, layoutFor, moveItem, resizeItem, rowTracks, saveLayout, savedLayout, sessionKey, widgetsFor, shapeOf } from '../../web/js/layout.js';
 
 const { cols: COLS, rows: ROWS } = gridOf('landscape');
 
@@ -28,7 +28,7 @@ test('portrait: every session has a valid board of its own', () => {
   const g = gridOf('portrait');
   for (const list of Object.values(DEFAULTS_PORTRAIT)) {
     assert.ok(list.every((a, n) => a.x + a.w <= g.cols && a.y + a.h <= g.rows && list.slice(n + 1).every((b) => !overlap(a, b))));
-    assert.equal(savedLayout({ 'race:portrait': list }, 'race', 'portrait').length, list.length);   // none under its smallest size
+    assert.equal(savedLayout({ 'race:out:portrait': list }, 'race:out', 'portrait').length, list.length);   // none under its smallest size
   }
 });
 
@@ -58,9 +58,16 @@ test('race over is a session of its own', () => {
   assert.equal(sessionKey('race', false), 'race');
 });
 
-test('out of the car is one screen, whatever the session', () => {
-  assert.equal(sessionKey('practice', false, true), 'out');
-  assert.equal(sessionKey('race', true, true), 'out');
+test('each session has a screen in the car and one out of it; the race over has one', () => {
+  assert.equal(sessionKey('practice', false, true), 'practice:out');
+  assert.equal(sessionKey('practice', false, false), 'practice');
+  assert.equal(sessionKey('race', true, true), 'over');
+  const common = [{ id: 'map', x: 0, y: 0, w: 10, h: 4 }], own = [{ id: 'fuel', x: 0, y: 0, w: 5, h: 4 }];
+  assert.deepEqual(savedLayout({ out: common }, 'race:out'), common);   // the common one, until it has its own
+  assert.deepEqual(savedLayout({ out: common, 'race:out': own }, 'race:out'), own);
+  assert.deepEqual(savedLayout({ out: common, 'race:out': own }, 'test:out'), common);
+  assert.equal(savedLayout({ out: common }, 'race'), null);
+  assert.deepEqual(layoutFor({}, 'race:out'), DEFAULTS.out);
 });
 
 test('an empty board is a choice, not a missing one', () => {
@@ -136,4 +143,12 @@ test('the rows of a fixed widget add up to its height, the others share the rest
   assert.equal(tracks.length, 3);
   assert.ok(rowTracks([{ id: 'standings', x: 0, y: 0, w: 12, h: 12 }], gridOf('landscape')).endsWith('minmax(0, 1fr)'));
   assert.ok(rowTracks([{ id: 'camera', x: 12, y: 10, w: 12, h: 2 }], gridOf('landscape')).endsWith('33.5px 33.5px'));
+});
+
+test('the camera control is only for out of the car', () => {
+  assert.ok(!widgetsFor('race').includes('camera'));
+  assert.ok(widgetsFor('race:out').includes('camera'));
+  const cam = [{ id: 'camera', x: 12, y: 10, w: 12, h: 2 }];
+  assert.deepEqual(savedLayout({ race: cam }, 'race'), []);
+  assert.equal(savedLayout({ 'race:out': cam }, 'race:out').length, 1);
 });

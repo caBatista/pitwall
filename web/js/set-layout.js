@@ -1,5 +1,5 @@
 import { esc, prefs, savePrefs } from './util.js';
-import { SESSIONS, WIDGETS, addItem, clearLayout, fixedAnchor, gridOf, layoutFor, moveItem, resizeItem, saveLayout, shapeOf } from './layout.js';
+import { SESSIONS, WIDGETS, addItem, clearLayout, fixedAnchor, gridOf, layoutFor, moveItem, resizeItem, saveLayout, shapeOf, widgetsFor } from './layout.js';
 import { currentScreen } from './set-screen.js';
 
 const pct = (v, of) => `${(100 * v) / of}%`;
@@ -27,14 +27,17 @@ export async function layoutPage(root) {
   };
   root.insertAdjacentHTML('beforeend', `
     <section class="st-sec">
-      <div class="st-sec-h"><div class="seg" id="ly-tabs">${SESSIONS.map(([k, n]) => `<button data-s="${k}">${n}</button>`).join('')}</div><button class="st-link" data-reset>Reset</button></div>
+      <div class="st-sec-h"><div class="seg" id="ly-tabs">${SESSIONS.map(([k, n]) => `<button data-s="${k}">${n}</button>`).join('')}</div>
+        <div class="seg" id="ly-where"><button data-w="">In car</button><button data-w=":out">Out of car</button></div>
+        <button class="st-link" data-reset>Reset</button></div>
       <div class="ly-board" id="ly-board"></div>
       <div class="ly-tray" id="ly-tray"></div>
     </section>`);
-  const tabs = root.querySelector('#ly-tabs'), board = root.querySelector('#ly-board'), tray = root.querySelector('#ly-tray');
+  const tabs = root.querySelector('#ly-tabs'), where = root.querySelector('#ly-where'), board = root.querySelector('#ly-board'), tray = root.querySelector('#ly-tray');
   board.style.aspectRatio = `${scr.w} / ${scr.h}`;
   board.classList.toggle('tall', shape === 'portrait');
-  let session = SESSIONS.some(([k]) => k === live()) ? live() : 'race';
+  const known = (s) => SESSIONS.some(([k]) => k === s?.split(':')[0]);
+  let session = known(live()) ? live() : 'race';
   let items = [], drag = null;
 
   const save = () => { saveLayout(prefs.layout ??= {}, session, shape, items); savePrefs(); };
@@ -43,16 +46,19 @@ export async function layoutPage(root) {
     for (const i of items) place(board.querySelector(`[data-id="${i.id}"]`), i);
   }
   function draw() {
-    for (const b of tabs.children) b.classList.toggle('on', b.dataset.s === session);
+    const [tab, out] = session.split(':');
+    for (const b of tabs.children) b.classList.toggle('on', b.dataset.s === tab);
+    where.hidden = tab === 'over';
+    for (const b of where.children) b.classList.toggle('on', b.dataset.w === (out ? ':out' : ''));
     board.innerHTML = items.map((i) => `<div class="ly-tile" data-id="${i.id}">
         <button class="ly-rm" data-rm title="Remove" aria-label="Remove ${esc(WIDGETS[i.id].name)}"></button>
         <b>${esc(WIDGETS[i.id].name)}</b>
         ${WIDGETS[i.id].px ? '' : '<span class="ly-rz" title="Drag to resize"></span>'}
       </div>`).join('');
     paint();
-    const out = Object.keys(WIDGETS).filter((id) => !items.some((i) => i.id === id));
-    tray.innerHTML = out.length
-      ? out.map((id) => `<button data-add="${id}" ${addItem(items, id, shape) ? '' : 'disabled title="No room left"'}>${esc(WIDGETS[id].name)}</button>`).join('')
+    const free = widgetsFor(session).filter((id) => !items.some((i) => i.id === id));
+    tray.innerHTML = free.length
+      ? free.map((id) => `<button data-add="${id}" ${addItem(items, id, shape) ? '' : 'disabled title="No room left"'}>${esc(WIDGETS[id].name)}</button>`).join('')
       : '<small>All widgets are on the board</small>';
   }
   function open(s) {
@@ -61,7 +67,14 @@ export async function layoutPage(root) {
     draw();
   }
 
-  tabs.addEventListener('click', (e) => { const s = e.target.closest('[data-s]')?.dataset.s; if (s) open(s); });
+  tabs.addEventListener('click', (e) => {   // keeps in car / out of car
+    const s = e.target.closest('[data-s]')?.dataset.s;
+    if (s) open(s === 'over' ? s : s + (session.endsWith(':out') ? ':out' : ''));
+  });
+  where.addEventListener('click', (e) => {
+    const w = e.target.closest('[data-w]')?.dataset.w;
+    if (w != null) open(session.split(':')[0] + w);
+  });
   tray.addEventListener('click', (e) => {
     const id = e.target.closest('[data-add]')?.dataset.add, next = id && addItem(items, id, shape);
     if (next) { items = next; save(); draw(); }
@@ -117,7 +130,7 @@ export async function layoutPage(root) {
 
   // the session changed on the board (the simulator's selector, or the race went on): follow it
   addEventListener('storage', (e) => {
-    if (e.key === 'pitwall.session' && e.newValue && !drag && root.dataset.shown === shown && SESSIONS.some(([k]) => k === e.newValue)) open(e.newValue);
+    if (e.key === 'pitwall.session' && e.newValue && !drag && root.dataset.shown === shown && known(e.newValue)) open(e.newValue);
   });
 
   open(session);

@@ -5,10 +5,9 @@ import { SESSIONS } from './layout.js';
 const GRIP = '<svg viewBox="0 0 10 14" aria-hidden="true"><g fill="currentColor"><circle cx="3" cy="3" r="1.2"/><circle cx="7" cy="3" r="1.2"/><circle cx="3" cy="7" r="1.2"/><circle cx="7" cy="7" r="1.2"/><circle cx="3" cy="11" r="1.2"/><circle cx="7" cy="11" r="1.2"/></g></svg>';
 const ARROW = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 2 7 5 3.5 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const SHORT = { test: 'Test', practice: 'Prac', qualify: 'Qual', race: 'Race', over: 'Over' };
-const LIST = SESSIONS.filter(([s]) => s !== 'out');   // the garage is a screen of its own in the Layout, not a session for the lists
 
 /** The titles over the session boxes. */
-export const sessionHead = () => `<span class="col-s">${LIST.map(([s, n]) => `<small title="${esc(n)}">${SHORT[s]}</small>`).join('')}</span>`;
+export const sessionHead = () => `<span class="col-s">${SESSIONS.map(([s, n]) => `<small title="${esc(n)}">${SHORT[s]}</small>`).join('')}</span>`;
 
 function optionHtml(cfg, table, k, o) {
   const v = optOf(cfg, table, k, o.k);
@@ -24,7 +23,7 @@ function optionHtml(cfg, table, k, o) {
 
 function rowHtml(cfg, table, k, open) {
   const c = table[k];
-  const on = c.fixed || LIST.some(([s]) => !hiddenIn(cfg, table, k, s));
+  const on = c.fixed || SESSIONS.some(([s]) => !hiddenIn(cfg, table, k, s));
   const has = !!c.opts?.length, show = has && open.has(k);
   return `<li class="col-row${on ? '' : ' off'}${show ? ' open' : ''}${c.child ? ' child' : ''}" data-k="${k}">
     <div class="col-main">
@@ -32,7 +31,7 @@ function rowHtml(cfg, table, k, open) {
       <label class="st-sw"><input type="checkbox" data-all ${on ? 'checked' : ''} ${c.fixed ? 'disabled' : ''} aria-label="${esc(c.label)}"><i></i></label>
       <span class="col-n">${esc(c.label)}${c.fixed ? '<small>Always on</small>' : ''}${c.note ? `<em>${esc(c.note)}</em>` : ''}</span>
       ${has ? `<button class="col-x" data-open title="Options" aria-label="${esc(c.label)} options" aria-expanded="${show}">${ARROW}</button>` : ''}
-      <span class="col-s">${LIST.map(([s, name]) => `<input type="checkbox" data-s="${s}" ${hiddenIn(cfg, table, k, s) ? '' : 'checked'} ${c.fixed ? 'disabled' : ''} aria-label="${esc(c.label)}: ${name}">`).join('')}</span>
+      <span class="col-s">${SESSIONS.map(([s, name]) => `<input type="checkbox" data-s="${s}" ${hiddenIn(cfg, table, k, s) ? '' : 'checked'} ${c.fixed ? 'disabled' : ''} aria-label="${esc(c.label)}: ${name}">`).join('')}</span>
     </div>
     ${show ? `<div class="col-opts">${c.opts.map((o) => optionHtml(cfg, table, k, o)).join('')}</div>` : ''}
   </li>`;
@@ -73,7 +72,7 @@ export function listEditor(list, cfg, table, onReset) {
     const c = cfg();
     list.innerHTML = orderOf(c, table).filter((k) => !table[k].child || open.has(table[k].child)).map((k) => rowHtml(c, table, k, open)).join('');
   };
-  const sessions = LIST.map(([s]) => s);
+  const sessions = SESSIONS.map(([s]) => s);
   draw();
   draggable(list, (order) => { cfg().order = order; savePrefs(); }, draw);   // draw: an entry's children go back under it
 

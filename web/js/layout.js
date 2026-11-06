@@ -34,9 +34,9 @@ export const WIDGETS = {
   weather: { name: 'Weather', mw: 4, mh: 3, w: 5, h: 4 },
   laplog: { name: 'Lap times', mw: 8, mh: 3, w: 14, h: 12 },
   events: { name: 'Race events', mw: 6, mh: 3, w: 10, h: 4 },
-  camera: { name: 'Camera control', w: 12, h: 2, tall: { w: 12, h: 2 }, px: [0, 81] },
+  camera: { name: 'Camera control', outOnly: true, w: 12, h: 2, tall: { w: 12, h: 2 }, px: [0, 81] },
 };
-export const SESSIONS = [['test', 'Test'], ['practice', 'Practice'], ['qualify', 'Qualify'], ['race', 'Race'], ['over', 'Race over'], ['out', 'In garage']];
+export const SESSIONS = [['test', 'Test'], ['practice', 'Practice'], ['qualify', 'Qualify'], ['race', 'Race'], ['over', 'Race over']];
 
 const box = (id, x, y, w, h) => ({ id, x, y, w, h });
 const RIGHT = [box('fuel', 14, 8, 5, 4), box('weather', 19, 8, 5, 4)];
@@ -61,18 +61,22 @@ export const DEFAULTS_PORTRAIT = {
 };
 DEFAULTS_PORTRAIT.practice = DEFAULTS_PORTRAIT.race;
 
-export const sessionKey = (kind, over, out) => (out ? 'out' : over ? 'over' : kind);
+/** Each session has a screen in the car and one out of it; the race over has one. */
+export const sessionKey = (kind, over, out) => (over ? 'over' : out ? `${kind}:out` : kind);
+const isOut = (session) => session.endsWith(':out');
+const inCar = (session) => SESSIONS.some(([s]) => s === session) && session !== 'over';
 
 const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 const inside = (i, g) => i.x >= 0 && i.y >= 0 && i.x + i.w <= g.cols && i.y + i.h <= g.rows;
 
 /** What was saved, if it still makes sense: known widgets, once each, inside the grid, not overlapping. */
 export function savedLayout(saved, session, shape) {
-  const list = saved?.[keyOf(session, shape)];
+  // out of the car: the common screen ('out') until this session gets its own
+  const list = saved?.[keyOf(session, shape)] ?? (isOut(session) ? saved?.[keyOf('out', shape)] : undefined);
   if (!Array.isArray(list)) return null;
   const g = gridOf(shape), out = [];
   for (const i of list) {
-    const m = WIDGETS[i?.id] && minOf(i.id, shape);
+    const m = WIDGETS[i?.id] && !(WIDGETS[i.id].outOnly && inCar(session)) && minOf(i.id, shape);
     const fix = m && WIDGETS[i.id].px ? { ...i, ...m, x: Math.min(i.x, g.cols - m.w), y: Math.min(i.y, g.rows - m.h) } : i;
     const ok = m && [fix.x, fix.y, fix.w, fix.h].every(Number.isInteger) && fix.w >= m.w && fix.h >= m.h;
     if (ok && inside(fix, g) && !out.some((o) => o.id === fix.id || hit(o, fix))) out.push(box(fix.id, fix.x, fix.y, fix.w, fix.h));
@@ -80,8 +84,10 @@ export function savedLayout(saved, session, shape) {
   return out;
 }
 
-const defaultOf = (session, shape) => (shape === 'portrait' ? DEFAULTS_PORTRAIT[session] ?? DEFAULTS_PORTRAIT.race : DEFAULTS[session] ?? FULL)
+const defaultOf = (session, shape) => (isOut(session) ? defaultOf('out', shape) : shape === 'portrait' ? DEFAULTS_PORTRAIT[session] ?? DEFAULTS_PORTRAIT.race : DEFAULTS[session] ?? FULL)
   .map((i) => ({ ...i }));
+/** The widgets this screen can have: nothing of the camera works with the driver in the car. */
+export const widgetsFor = (session) => Object.keys(WIDGETS).filter((id) => !(WIDGETS[id].outOnly && inCar(session)));
 export const layoutFor = (saved, session, shape) => savedLayout(saved, session, shape) ?? defaultOf(session, shape);
 export const saveLayout = (saved, session, shape, items) => { saved[keyOf(session, shape)] = items; };
 export const clearLayout = (saved, session, shape) => { delete saved?.[keyOf(session, shape)]; };

@@ -220,7 +220,7 @@ mockSeg.addEventListener('click', (e) => {
 });
 function mockSession() {
   const s = S.st?.session;
-  const now = s && sessionKey(s.kind, s.over, !s.inCar);
+  const now = s && (s.over ? 'over' : s.inCar ? s.kind : 'out');
   if (now === mockSeg.dataset.now) return;
   mockSeg.dataset.now = now;
   for (const b of mockSeg.children) b.classList.toggle('on', b.dataset.mock === now);
