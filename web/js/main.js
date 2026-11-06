@@ -245,7 +245,7 @@ function connect() {
     if (e.data === S.raw && !fx.live && settled) return;
     const m = JSON.parse(e.data);
     switch (m.type) {
-      case 'hello': S.source = m.source; mockSeg.hidden = m.source !== 'simulator'; flagButtons(m.source === 'simulator' || !!m.dev); break;
+      case 'hello': S.source = m.source; mockSeg.hidden = m.source !== 'simulator'; flagButtons(!!m.dev); break;
       case 'drivers':
         S.drivers = m.drivers; S.meta = m.meta || {}; S.classes = m.classes || [];
         S.classMap = new Map(S.classes.map((c) => [c.id, c]));

@@ -57,7 +57,7 @@ def main():
     mapper = TrackMapper(data / "maps" if args.data else args.maps_dir, flip=args.flip_map, library_dir=ROOT / "maps" / "library")
     engine = Engine(mapper)
     pit = App(source, engine, hz=args.hz, prefs_path=data / "settings.json")
-    pit.dev = bool(args.dev_parent)
+    pit.dev = bool(args.dev_parent or args.mock)   # never in the EXE: it runs pitwall.desktop
     app = pit.build()
 
     host = "0.0.0.0" if args.lan else "127.0.0.1"
