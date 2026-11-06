@@ -3,6 +3,14 @@
 Dashboard local de tempo real para iRacing: **Standings, Relative, Fuel, Mapa da pista e Weather**.
 Lê a memória compartilhada do iRacing (pyirsdk) a 20 Hz e serve a interface em `http://localhost:8765`.
 
+## Beta
+
+O visual ainda está mudando; cada etapa fica registrada aqui.
+
+**6 de novembro de 2026, antes da limpeza do layout:** widgets em cards, com título e borda.
+
+![Pitwall em corrida multiclasse, antes da limpeza do layout](docs/img/beta-antes.png)
+
 ## Rodar (Windows)
 
 1. Instale o Python 3.9+ (marque "Add to PATH").

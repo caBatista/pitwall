@@ -38,9 +38,8 @@ export function driverName(name, format, keepNumber = false) {
 }
 
 export const STAND = {
-  pos: { label: 'Position and car number', w: '72px', title: 'Pos', a: 'c', lead: true, opts: [
-    { k: 'num', label: 'Show the car number', type: 'bool', d: true },
-  ] },
+  pos: { label: 'Position', w: '34px', title: 'Pos', a: 'c', lead: true },
+  num: { label: 'Car number', w: '32px', title: 'No', a: 'c', lead: true },
   pg: { label: 'Positions gained', w: '22px', title: '', a: 'c', lead: true },
   make: { label: 'Car brand', w: '40px', title: '', a: 'c', lead: true },
   flag: { label: 'Country', w: '22px', title: '', a: 'c', lead: true },
@@ -164,7 +163,6 @@ export function standCols(cfg, session) {
 
 function width(k, n, cols, cfg, over) {
   if (over && OVER_W[k]) return OVER_W[k];
-  if (k === 'pos' && !optOf(cfg, STAND, 'pos', 'num')) return '38px';
   if (k === 'ir' && !optOf(cfg, STAND, 'ir', 'gain')) return '52px';
   if (k === 'tyre' && optOf(cfg, STAND, 'tyre', 'show') === 'text') return '30px';
   return STAND[base(k)].w;
@@ -178,7 +176,7 @@ export function standNeed(cols, cfg, over) {
   return sum + GAP * Math.max(0, cols.length - 1) + PAD;
 }
 // what goes first when the panel is too narrow; pos and name always stay
-const DROP = ['d5', 'd4', 'd3', 'd2', 'pg', 'flag', 'sr', 'tyre', 'd1', 'status', 'make', 'last', 'ir', 'int', 'best', 'gap'];
+const DROP = ['d5', 'd4', 'd3', 'd2', 'pg', 'flag', 'sr', 'tyre', 'd1', 'status', 'make', 'last', 'ir', 'int', 'best', 'gap', 'num'];
 /** What fits in room px: nothing is ever cut in half, the least important go first. */
 export function standFit(cols, cfg, over, room) {
   const out = [...cols], dropped = [];

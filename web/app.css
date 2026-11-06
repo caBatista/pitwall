@@ -142,11 +142,12 @@ body.transparent .card { background: rgba(17, 17, 18, .82); backdrop-filter: blu
 }
 .seg button.on { background: var(--accent); color: var(--ink); }
 .cls-chip {
-  display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; cursor: pointer;
-  background: var(--bg-2); border: 1px solid var(--line); font: 500 10.5px var(--mono); letter-spacing: .06em; color: var(--dim);
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 7px; cursor: pointer;
+  background: rgba(255, 255, 255, .045); color: var(--dim); font: 600 11.5px var(--num);
 }
 .cls-chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--cc, var(--accent)); }
-.cls-chip.on { color: var(--txt); border-color: var(--cc, var(--accent)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--cc, var(--accent)) 40%, transparent); }
+.cls-chip:hover { background: rgba(255, 255, 255, .08); color: var(--txt); }
+.cls-chip.on { background: color-mix(in srgb, var(--cc, var(--accent)) 26%, transparent); color: var(--txt); }
 
 /* ---------- standings ---------- */
 /* rows reuse the relative's .rrow look; .srow only sets the standings columns:
@@ -160,21 +161,16 @@ body.transparent .card { background: rgba(17, 17, 18, .82); backdrop-filter: blu
 .s-head .c, .srow .c { text-align: center; }
 .ghead .r { text-align: right; }
 .s-body {
-  overflow: hidden; flex: 1; min-height: 0; margin: 0 8px 10px; border-radius: 10px; position: relative;
+  overflow: hidden; flex: 1; min-height: 0; margin: 0 0 10px 8px; padding-right: 8px; border-radius: 10px; position: relative;   /* the rows as wide as ever: the scroll bar has the gap to itself */
 }
 .s-body::after {   /* scroll position: the list moves a row at a time in JS, see visibleRows */
   content: ""; position: absolute; right: 0; width: 3px; border-radius: 2px; top: var(--tt, 0); height: var(--th, 0); background: var(--line-2);
 }
-.ghead {   /* also the column-title row of its class (grid from .srow) */
-  height: 30px; padding-right: 6px; font: 500 10px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--dim);
-}
-.ghead .gl {   /* class, drivers and SOF across pos .. iR */
-  display: flex; align-items: center; gap: 12px; padding-left: 6px; white-space: nowrap;
-  color: var(--cc); font-size: 10.5px;
-}
-.ghead .gl::before { content: ""; width: 14px; height: 4px; background: var(--cc); transform: skewX(-12deg); margin-right: -2px; }
-.ghead .gn { display: inline-flex; align-items: center; gap: 4px; color: var(--dim); letter-spacing: .04em; }
-.ghead .gn .helmet { width: 13px; height: 11px; color: var(--txt); }
+.ghead { height: 30px; padding-right: 6px; color: var(--dim); }   /* the class alone: grid from .srow */
+.ghead .gl { display: flex; align-items: center; gap: 12px; padding-left: 4px; white-space: nowrap; color: var(--txt); font: 900 13.5px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; }
+.ghead .gl::before { content: ""; width: 10px; height: 10px; margin-right: -4px; border-radius: 2px; background: var(--cc); transform: skewX(-12deg); }
+.ghead .gn { display: inline-flex; align-items: center; gap: 4px; color: var(--dim); font: 600 11.5px/1 var(--num); letter-spacing: 0; text-transform: none; }
+.ghead .gn .helmet { width: 13px; height: 11px; color: var(--dim); }
 .srow .t { font: 600 12.5px var(--num); font-variant-numeric: tabular-nums; text-align: right; }
 .srow .dl { font: 600 12px var(--num); font-variant-numeric: tabular-nums; text-align: right; color: var(--dim); }
 .srow .dl.faster { color: var(--red); }     /* their lap quicker than mine */
@@ -219,7 +215,7 @@ svg.tyre.wet { color: var(--blue); }
 .rel-body { margin: 0 8px 10px; border-radius: 6px; overflow: hidden; }  /* rounded as a block, rows are square */
 /* pos | [class # make] | flag | name [OUT][status] | SR | iRating | best lap | relative */
 .rrow {
-  display: grid; grid-template-columns: 72px 40px 22px minmax(90px, 1fr) 56px 84px 60px 58px; align-items: center; column-gap: 8px;
+  display: grid; grid-template-columns: 34px 30px 40px 22px minmax(90px, 1fr) 56px 84px 60px 58px; align-items: center; column-gap: 8px;
   height: 30px; padding: 0 8px 0 0; position: relative; overflow: hidden;
   border-bottom: 1px solid var(--sep);
 }
@@ -244,13 +240,17 @@ svg.tyre.wet { color: var(--blue); }
    class colour, fading out to the right, and the number plain beside it */
 .rrow.srow, .rel-body .rrow { border-bottom: 0; box-shadow: inset 0 -1px var(--sep); }   /* the separator goes behind the colour: no gap in it */
 .rrow .spos { display: flex; align-items: center; align-self: stretch; gap: 6px; min-width: 0; }
-.spos .sp { position: relative; isolation: isolate; display: grid; place-items: center; flex: 0 0 32px; align-self: stretch; color: var(--txt); font: 700 16px/1 var(--num); font-variant-numeric: tabular-nums; }
+.spos .sp { position: relative; isolation: isolate; display: grid; place-items: center; flex: 1; align-self: stretch; color: var(--txt); font: 700 16px/1 var(--num); font-variant-numeric: tabular-nums; }
 .spos .sp::before { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, color-mix(in srgb, var(--cc) 45%, transparent), transparent); }
 /* only the ends of a run of drivers round off: the row itself, so colour and highlight follow it */
-.ghead + .rrow, .rel-body .rrow:first-child, .rrow.empty + .rrow { border-top-left-radius: 9px; border-top-right-radius: 9px; }
-.rrow:has(+ .ghead), .rrow:has(+ .rrow.empty), .rrow:last-child { border-bottom-left-radius: 9px; border-bottom-right-radius: 9px; }
+.ghead + .rrow, .rel-body .rrow:first-child, .rrow.empty + .rrow { --glass-t: 1px; border-top-left-radius: 9px; border-top-right-radius: 9px; }
+.rrow:has(+ .ghead), .rrow:has(+ .rrow.empty), .rrow:last-child { --glass-b: 1px; border-bottom-left-radius: 9px; border-bottom-right-radius: 9px; }
+/* a thin glass edge around each class and the Relative: drawn over the row, so no colour covers it */
+.rrow.srow::after, .rel-body .rrow:not(.empty)::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; border: solid rgba(255, 255, 255, .13); border-width: var(--glass-t, 0) 1px var(--glass-b, 0); border-radius: inherit;
+}
 .srow .hd { color: var(--dim); text-transform: uppercase; }
-.spos .sn { flex: 1; min-width: 0; display: grid; place-items: center; color: color-mix(in srgb, var(--txt) 65%, transparent); font: 600 13px/1 var(--num); font-variant-numeric: tabular-nums; }
+.rrow .sn { min-width: 0; text-align: center; color: color-mix(in srgb, var(--txt) 65%, transparent); font: 600 13px/1 var(--num); font-variant-numeric: tabular-nums; }
 .mk { display: grid; place-items: center; }
 .tyre-t { font: 600 10px var(--mono); letter-spacing: .04em; color: var(--txt); }
 .tyre-t.wet { color: var(--blue); }
@@ -312,12 +312,16 @@ svg.tyre.wet { color: var(--blue); }
 /* lapped / lapping (race): the colour starts right where the car number block does (28px = pos
    column 34 + gap 8 - 15 overlap) and runs behind the make logo, so the number's class wash fades
    into red/blue instead of into the row */
-.rrow.up { background: linear-gradient(90deg, transparent 28px, rgba(255, 90, 90, .32) 28px); }
-.rrow.down { background: linear-gradient(90deg, transparent 28px, rgba(106, 168, 255, .32) 28px); }
+.rrow.up, .rrow.down { --wash-a: 30%; --wash-b: 8%; }
+.rrow.up { --wash: rgb(255, 90, 90); }
+.rrow.down { --wash: rgb(106, 168, 255); }
+.rrow.me, .rrow.up, .rrow.down {
+  background: linear-gradient(90deg, transparent 38px, color-mix(in srgb, var(--wash) var(--wash-a, 13%), transparent) 180px, color-mix(in srgb, var(--wash) var(--wash-b, 3%), transparent));
+}
 .rrow.empty { opacity: .0; }
 .rrow.pitrow { opacity: .6; }
 .rrow.me {   /* a wash along the row, nothing on top of it: the reference driver shows and nothing is hidden */
-  background: linear-gradient(90deg, transparent 38px, color-mix(in srgb, var(--accent) 13%, transparent) 180px, color-mix(in srgb, var(--accent) 3%, transparent));   /* clear of the class colour */
+  --wash: var(--accent);   /* clear of the class colour */
 }
 .rrow.me .rt { color: var(--accent); }
 .lapt { display: inline-block; padding: 1px 6px; border-radius: 5px; font: 700 10px var(--mono); }
@@ -466,6 +470,12 @@ sup.inv { color: var(--accent); font-size: .8em; line-height: 0; margin-left: 1p
 }
 .ctx button:hover { background: var(--accent); color: var(--ink, #111112); }
 
+/* try-out: cards with no border and no title */
+.card { border-color: transparent; background: none; box-shadow: none; }
+body { background: var(--card); }
+.me-bar { margin: 0 8px 8px; border: 0; border-radius: 10px; background: rgba(255, 255, 255, .045); }
+.card-h > .ttl { display: none; }
+.card-h:not(:has(> :not(.ttl))) { display: none; }
 /* ---------- camera control ---------- */
 #w-camera { display: none; }
 .board.solo #w-camera { display: flex; }
@@ -537,7 +547,9 @@ body[data-static] .slot-nav { display: none !important; }
 }
 .ev-kinds button:hover { background: rgba(255, 255, 255, .08); color: var(--txt); }
 .ev-kinds button.on { background: rgba(255, 255, 255, .045); color: var(--txt); }
-.ev-kinds .seg { padding: 2px; border: 0; background: rgba(255, 255, 255, .045); }
+.ev-kinds .seg, #w-standings .seg { padding: 2px; border: 0; background: rgba(255, 255, 255, .045); }
+#w-standings .seg button { color: var(--dim); font: 600 11.5px var(--num); letter-spacing: 0; text-transform: none; }
+#w-standings .seg button.on { color: var(--ink); }
 .ev-kinds .seg button.on, .ev-kinds .seg button.on:hover { background: var(--accent); color: var(--ink); }
 .ev-body { flex: 1; min-height: 0; overflow-y: auto; margin: 0 8px 10px; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .ev-sess { margin: 12px 6px 2px; padding-top: 9px; border-top: 1px solid var(--line-2); color: var(--txt); font: 900 15px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; }

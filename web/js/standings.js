@@ -54,7 +54,8 @@ function statusHtml(c, off) {
   return c.cb && !off.has('fast') ? ST.fast : '';
 }
 const CELL = {
-  pos: (c, x) => ['spos', `<span class="sp">${x.pos}</span>${x.o.posNum ? `<span class="sn">${esc(x.d.num)}</span>` : ''}`, `--cc:${x.color}`],
+  pos: (c, x) => ['spos', `<span class="sp">${x.pos}</span>`, `--cc:${x.color}`],
+  num: (c, x) => ['sn', esc(x.d.num)],
   pg: (c, x) => ['pgc', x.pg],
   make: (c, x) => ['mk', makeHtml(x.d.make)],
   flag: (c, x) => ['fc', flagHtml(x.d.country)],
@@ -131,7 +132,7 @@ export const standings = {
     addEventListener('prefs', () => { this.layoutKey = ''; });
     this.lastCtl = '';
     // how many rows fit depends on the panel, not on the data: measured only when it resizes
-    new ResizeObserver(() => { this.room = this.body.clientHeight; this.wide = this.body.clientWidth; S.invalidate(); }).observe(this.body);
+    new ResizeObserver(() => { this.room = this.body.clientHeight; this.wide = this.body.clientWidth - 8; S.invalidate(); }).observe(this.body);
     this.from = this.max = this.wheel = 0;
     const scroll = (n) => {
       const from = Math.max(0, Math.min(this.max, this.from + n));
@@ -189,7 +190,6 @@ export const standings = {
       const fit = standFit(want, prefs.stand, over, innerWidth < 800 ? 0 : this.wide);   // a phone scrolls sideways instead
       this.cols = fit.cols;
       this.o = options(prefs.stand, session);
-      this.o.posNum = optOf(prefs.stand, STAND, 'pos', 'num');
       this.body.parentElement.style.setProperty('--scols', standGrid(fit.cols, prefs.stand, over));   // not on body: its style is rewritten below
       const { lead } = standHead(fit.cols);
       this.lead = lead;

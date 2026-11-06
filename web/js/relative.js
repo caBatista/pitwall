@@ -44,7 +44,8 @@ export const relative = {
       // best lap (like RaceLab); * = their latest lap was invalidated / had an incident
       const best = c.best ? `<span class="t ${c.cb ? 'cb' : ''}">${lap1(c.best)}${c.lastx ? INV : ''}</span>` : `<span class="t dim">-:--.-${c.lastx ? INV : ''}</span>`;
       return [
-        ['spos', `<span class="sp">${c.cp || '–'}</span><span class="sn">${esc(d.num)}</span>`, `--cc:${cls.color}`],
+        ['spos', `<span class="sp">${c.cp || '–'}</span>`, `--cc:${cls.color}`],
+        ['sn', esc(d.num)],
         ['mk', makeHtml(d.make)],
         ['fc', flagHtml(d.country)],
         ['rname', `<span class="nm">${esc(d.name)}</span>${extra}`],
