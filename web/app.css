@@ -590,3 +590,28 @@ body[data-static] .slot-nav { display: none !important; }
   .app { grid-template-columns: minmax(0, 1fr); }
   .top { flex-wrap: wrap; gap: 8px 18px; }
 }
+
+/* ---------- race flags: the background behind the whole board (flags.js). Fades once, nothing keeps animating ---------- */
+#flag-bg { position: fixed; inset: -40px; z-index: -1; pointer-events: none; opacity: 0; transition: opacity 1.2s; }
+#flag-bg.on { transition: none; will-change: opacity; }   /* its opacity comes from flags.js */
+#flag-bg[data-f="green"] { background: color-mix(in srgb, #22b455 34%, var(--card)); }
+#flag-bg[data-f="yellow"] { background: color-mix(in srgb, #f4b400 36%, var(--card)); }
+#flag-bg[data-f="blue"] { background: color-mix(in srgb, #2f6fe0 42%, var(--card)); }
+#flag-bg[data-f="debris"] { background: repeating-linear-gradient(-45deg, #f4b400 0 90px, #e5352b 90px 180px); filter: blur(22px); -webkit-mask-image: radial-gradient(circle at center, rgba(0, 0, 0, .46) 25%, transparent 95%); }
+#flag-bg[data-f="white"] { background: color-mix(in srgb, #fff 30%, var(--card)); }
+#flag-bg[data-f="black"] { background: radial-gradient(ellipse at center, #000 50%, #4a4a4e 100%); }
+#flag-bg[data-f="meatball"] { background: radial-gradient(circle at center, color-mix(in srgb, #ff7a1a 44%, var(--card)), #000 90%); }
+#flag-bg[data-f="checkered"] { background: repeating-conic-gradient(#fff 0 25%, #000 0 50%) 0 0 / 240px 240px; filter: blur(22px); -webkit-mask-image: radial-gradient(circle at center, rgba(0, 0, 0, .42) 25%, transparent 95%); }
+.flag-test { display: flex; gap: 3px; padding: 2px; border-radius: 8px; background: rgba(255, 255, 255, .045); }
+.flag-test[hidden] { display: none; }
+.flag-test button { display: grid; place-items: center; width: 24px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; }
+.flag-test button:hover, .flag-test button.on { background: rgba(255, 255, 255, .14); }
+.flag-test i { width: 15px; height: 11px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25); }
+.flag-test [data-flag="green"] i { background: #22b455; }
+.flag-test [data-flag="yellow"] i { background: #f4b400; }
+.flag-test [data-flag="blue"] i { background: #2f6fe0; }
+.flag-test [data-flag="debris"] i { background: repeating-linear-gradient(-45deg, #f4b400 0 3px, #e5352b 3px 6px); }
+.flag-test [data-flag="white"] i { background: #fff; }
+.flag-test [data-flag="black"] i { background: #000; }
+.flag-test [data-flag="meatball"] i { background: radial-gradient(circle, #ff7a1a 42%, #000 46%); }
+.flag-test [data-flag="checkered"] i { background: repeating-conic-gradient(#fff 0 25%, #000 0 50%) 0 0 / 7px 7px; }

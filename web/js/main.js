@@ -6,6 +6,7 @@ import { fuel } from './fuel.js';
 import { weather } from './weather.js';
 import { laplog } from './laplog.js';
 import { events } from './events.js';
+import { flagButtons, setFlag } from './flags.js';
 import { WIDGETS, boardLayout, gridArea, gridOf, sessionKey, shapeOf, fixedAnchor, rowTracks } from './layout.js';
 import { HEADER, hiddenIn, optOf, orderOf, viewSession } from './columns.js';
 import { camera } from './camera.js';
@@ -126,7 +127,7 @@ function applyHeader() {
   orderOf(cfg, HEADER).forEach((k, n) => {
     els[k].style.order = n * 2 + 1;
     els[k].classList.toggle('off', hiddenIn(cfg, HEADER, k, session));
-    if (k === 'clock') document.getElementById('mock-seg').style.order = n * 2 + 2;
+    if (k === 'clock') document.getElementById('mock-seg').style.order = document.getElementById('flag-test').style.order = n * 2 + 2;
   });
   document.getElementById('set-btn').style.order = 99;
   els.brand.querySelector('b').hidden = !optOf(cfg, HEADER, 'brand', 'text');
@@ -244,7 +245,7 @@ function connect() {
     if (e.data === S.raw && !fx.live && settled) return;
     const m = JSON.parse(e.data);
     switch (m.type) {
-      case 'hello': S.source = m.source; mockSeg.hidden = m.source !== 'simulator'; break;
+      case 'hello': S.source = m.source; mockSeg.hidden = m.source !== 'simulator'; flagButtons(m.source === 'simulator' || !!m.dev); break;
       case 'drivers':
         S.drivers = m.drivers; S.meta = m.meta || {}; S.classes = m.classes || [];
         S.classMap = new Map(S.classes.map((c) => [c.id, c]));
@@ -266,6 +267,7 @@ function connect() {
         if (m.session) document.body.toggleAttribute('data-out', !m.session.inCar);
         // a finished race in the replay: the result and Race Events, nothing else
         if (m.session) document.body.toggleAttribute('data-static', !!m.session.static);
+        setFlag(m.session?.rflag ?? null, m.session?.rflag === 'checkered' && !!m.cars.find((c) => c.i === m.user?.i)?.fin);
         applyLayout();
         applyHeader();
         break;

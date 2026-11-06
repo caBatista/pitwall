@@ -442,3 +442,11 @@ def test_the_mock_changes_session_while_running():
     m.sub = 1
     m.set_session("qualify")
     assert m.poll()["SessionState"] == 4 and m.session_info(None)["WeekendInfo"]["SubSessionID"] == 2
+
+
+def test_the_flag_the_driver_is_under_the_most_serious_first():
+    from pitwall.engine import race_flag
+    assert race_flag(0) is None and race_flag(0x400) is None      # green held: the race going on
+    assert race_flag(0x4) == "green" and race_flag(0x2) == "white" and race_flag(0x1) == "checkered"
+    assert race_flag(0x8 | 0x20) == "yellow" and race_flag(0x40) == "debris" and race_flag(0x10) is None
+    assert race_flag(0x8, 0x10000) == "black" and race_flag(0, 0x100000) == "meatball"

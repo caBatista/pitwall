@@ -75,6 +75,7 @@ class App:
         self._wx_sent = 0.0
         self._connected = False
         self.auto_fuel = None   # (reserve, laps) with Auto fuel on, from the fuel card
+        self.dev = False        # run by Pitwall Dev.bat: the buttons to try things out
         self._walk, self._walk_car, self._walk_tries, self._walk_guesses = None, None, 0, 0   # the lap being gone to
         self._walk_t, self._walk_end = 0.0, 0.0
         self._cam_accel = False   # the tool's key acceleration, off while the sticks are in use
@@ -92,7 +93,7 @@ class App:
         await ws.prepare(request)
         self.clients.add(ws)
         try:
-            await ws.send_str(dumps({"type": "hello", "source": self.source.name}))
+            await ws.send_str(dumps({"type": "hello", "source": self.source.name, "dev": self.dev}))
             if self.engine.drivers:
                 await ws.send_str(dumps(self.engine.drivers_msg()))
             await ws.send_str(dumps(_clean(self.engine.track_msg())))

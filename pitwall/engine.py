@@ -119,6 +119,26 @@ def parse_km(text):
     return v * 1.609344 if m.group(2).lower() == "mi" else v
 
 
+def race_flag(bits, car_bits=0):
+    """The flag the driver is under, the most serious first: what the background of the board shows."""
+    bits = int(bits or 0) | int(car_bits or 0)
+    if bits & (0x20000 | 0x10000):
+        return "black"
+    if bits & 0x100000:
+        return "meatball"
+    if bits & YELLOWS:
+        return "yellow"
+    if bits & 0x40:
+        return "debris"
+    if bits & 0x1:
+        return "checkered"
+    if bits & 0x2:
+        return "white"
+    if bits & 0x20:
+        return "blue"
+    return "green" if bits & 0x4 else None
+
+
 def flag_name(bits: int) -> str:
     bits = int(bits or 0)
     if bits & 0x1:
@@ -562,7 +582,7 @@ class Engine:
         # where the driver is now, not where the last live frame found them: watching a replay is out of the car
         self.in_car = bool(raw.get("IsOnTrack"))
         live = self._live
-        session = dict(live["session"], behind=round(behind, 1), inCar=self.in_car)
+        session = dict(live["session"], behind=round(behind, 1), inCar=self.in_car, rflag=None)
         if "session" in seen:
             session["static"] = seen["session"].get("static")
         if session.get("timeRemain") is not None:
@@ -1183,6 +1203,7 @@ class Engine:
                 "isRace": is_race, "kind": kind, "state": int(raw.get("SessionState") or 0), "over": over, "static": static,
                 "stateName": SESSION_STATE.get(int(raw.get("SessionState") or 0), ""),
                 "flag": flag, "timeRemain": tr,
+                "rflag": race_flag(raw.get("SessionFlags"), cflags[me] if me < len(cflags) else 0) if raw.get("IsOnTrack") else None,
                 "timeTotal": time_total if time_total < UNLIMITED_TIME else None,
                 "lapsRemain": laps_rem if laps_rem < UNLIMITED_LAPS else None,
                 "lapsTotal": laps_total if laps_total < UNLIMITED_LAPS else None,
