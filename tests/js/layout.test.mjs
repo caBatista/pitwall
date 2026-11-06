@@ -119,3 +119,10 @@ test('a damaged file loses only what makes no sense', () => {
 test('grid area', () => {
   assert.equal(gridArea({ x: 14, y: 4, w: 10, h: 4 }), '5 / 15 / span 4 / span 10');
 });
+
+test('camera control is a widget like the others, outside every default', () => {
+  assert.equal(WIDGETS.camera.name, 'Camera control');
+  for (const list of [...Object.values(DEFAULTS), ...Object.values(DEFAULTS_PORTRAIT)]) assert.ok(!at(list, 'camera'));
+  const free = [{ id: 'standings', x: 0, y: 0, w: 14, h: 12 }];
+  assert.deepEqual(at(addItem(free, 'camera'), 'camera'), { id: 'camera', x: 14, y: 0, w: 10, h: 8 });
+});

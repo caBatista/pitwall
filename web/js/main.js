@@ -8,6 +8,7 @@ import { laplog } from './laplog.js';
 import { events } from './events.js';
 import { WIDGETS, boardLayout, gridArea, gridOf, sessionKey, shapeOf } from './layout.js';
 import { HEADER, hiddenIn, optOf, orderOf, viewSession } from './columns.js';
+import { camera } from './camera.js';
 
 const params = new URLSearchParams(location.search);
 if (params.get('bg') === 'transparent') document.body.classList.add('transparent');
@@ -29,7 +30,7 @@ const S = {
 };
 
 // ---- widgets -----------------------------------------------------------------
-const ALL = { standings, relative, map: trackmap, fuel, weather, laplog, events };
+const ALL = { standings, relative, map: trackmap, fuel, weather, laplog, events, camera };
 const want = (params.get('w') || 'standings,relative,map,fuel,weather').split(',').map((s) => s.trim()).filter((k) => ALL[k]);
 const board = document.getElementById('board');
 const mk = (w) => {
@@ -44,14 +45,14 @@ if (params.get('w')) {
   for (const k of want) { const el = mk(ALL[k]); board.appendChild(el); widgets.push([ALL[k], el]); }
 } else {
   const bottom = document.createElement('div'); bottom.className = 'col-bottom';
-  for (const k of ['standings', 'laplog', 'relative', 'map', 'events']) { const el = mk(ALL[k]); board.appendChild(el); widgets.push([ALL[k], el]); }
+  for (const k of ['standings', 'laplog', 'relative', 'map', 'events', 'camera']) { const el = mk(ALL[k]); board.appendChild(el); widgets.push([ALL[k], el]); }
   for (const k of ['fuel', 'weather']) { const el = mk(ALL[k]); bottom.appendChild(el); widgets.push([ALL[k], el]); }
   board.appendChild(bottom);
 }
 for (const [w, el] of widgets) w.mount(el, S);
 
 // out of the car the map's place takes turns with Fuel and Weather: arrows on hover (see app.css)
-const SLOTS = ['map', 'fuel', 'weather'];
+const SLOTS = ['map', 'fuel', 'weather', 'camera'];
 function showSlot(k) {
   if (k === 'map') delete document.body.dataset.slot; else document.body.dataset.slot = k;
 }
@@ -275,7 +276,7 @@ connect();
 // only the mounted widgets: with ?w= the others never ran mount()
 let slow = 0;
 const fast = [standings, relative, trackmap].filter((w) => on.has(w));
-const slowW = [fuel, weather, laplog, events].filter((w) => on.has(w));
+const slowW = [fuel, weather, laplog, events, camera].filter((w) => on.has(w));
 // ?hz=10 (desktop: --render-hz 10) caps the panels below the 20 updates/s that arrive; default: no cap
 const minGap = 1000 / (Number(params.get('hz')) || Infinity);
 let drawn = 0, later = 0, settled = false;

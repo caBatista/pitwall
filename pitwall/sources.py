@@ -15,13 +15,15 @@ import threading
 import time
 
 from . import chat, simwindow
+from .camera import CamKeys
 
 # Everything the engine needs, nothing more: fewer reads per tick = lower CPU.
 SCALARS = [
     "SessionTime", "SessionNum", "SessionState", "SessionFlags",
     "SessionTimeRemain", "SessionLapsRemainEx", "SessionLapsTotal",
     "SessionTimeTotal", "SessionTimeOfDay", "SessionInfoUpdate",
-    "PlayerCarIdx", "CamCarIdx", "PlayerTireCompound", "PitSvTireCompound", "PitSvFlags", "PitSvFuel", "IsOnTrack", "OnPitRoad", "Lap", "LapCompleted", "RadioTransmitCarIdx",
+    "PlayerCarIdx", "CamCarIdx", "CamGroupNumber", "CamCameraNumber", "CamCameraState", "ReplayPlaySpeed", "ReplayPlaySlowMotion",
+    "PlayerTireCompound", "PitSvTireCompound", "PitSvFlags", "PitSvFuel", "IsOnTrack", "OnPitRoad", "Lap", "LapCompleted", "RadioTransmitCarIdx",
     "LapDistPct", "LapDeltaToBestLap", "LapDeltaToBestLap_OK",
     "LapBestLapTime", "LapLastLapTime", "LapCurrentLapTime",
     "Speed", "Gear", "RPM", "FuelLevel", "FuelLevelPct", "FuelUsePerHour",
@@ -44,6 +46,7 @@ class IRacingSource:
     name = "iRacing"
 
     def __init__(self):
+        self._cam_keys = CamKeys()
         try:
             import irsdk  # noqa: WPS433
         except ImportError:  # pragma: no cover
@@ -110,6 +113,40 @@ class IRacingSource:
             self.ir.replay_set_play_speed(1)
             self.ir.replay_search_session_time(session, ms)
 
+    # ---- the camera widget ------------------------------------------------
+    def cam_switch(self, num, group, camera):
+        if self.ir.is_connected:
+            self.ir.cam_switch_num(num, group, camera)
+
+    def cam_follow(self, mode, group, camera):
+        """mode: irsdk's csMode, -1 most exciting, -2 leader, -3 incident."""
+        if self.ir.is_connected:
+            self.ir.cam_switch_pos(mode, group, camera)
+
+    def cam_state(self, bits):
+        if self.ir.is_connected:
+            self.ir.cam_set_state(bits)
+
+    def cam_move(self, axes):
+        self._cam_keys.drive(axes)
+
+    def cam_tap(self, name):
+        if self.ir.is_connected:
+            self._cam_keys.tap(name)
+
+    def replay_speed(self, speed, slow):
+        if self.ir.is_connected:
+            self.ir.replay_set_play_speed(speed, slow)
+
+    def replay_jump(self, mode):
+        if self.ir.is_connected:
+            self.ir.replay_search(mode)
+
+    def replay_at(self, session, ms):
+        if self.ir.is_connected:
+            self.ir.replay_set_play_speed(1)   # first, as in replay
+            self.ir.replay_search_session_time(session, ms)
+
     def _chase(self):
         """(group, camera) of the Chase camera; without one, the camera in use."""
         groups = (self.ir["CameraInfo"] or {}).get("Groups") or []
@@ -145,7 +182,7 @@ class IRacingSource:
             return None
         self._info_tick = tick
         info = {}
-        for key in ("WeekendInfo", "DriverInfo", "SessionInfo", "SplitTimeInfo", "QualifyResultsInfo"):
+        for key in ("WeekendInfo", "DriverInfo", "SessionInfo", "SplitTimeInfo", "QualifyResultsInfo", "CameraInfo"):
             try:
                 info[key] = self.ir[key]
             except Exception:  # noqa: BLE001
@@ -199,6 +236,8 @@ class MockSource:
         self.track_id = track_id   # a real TrackID makes the map come from maps/library
         self.session = session   # iRacing SessionType to pretend: Race / Open Qualify / Practice / Offline Testing
         self.sub = 0   # a new SubSessionID for each session picked, so nothing carries over
+        self.cam_group, self.cam_number, self.cam_bits = 1, 1, 0x51
+        self.play_speed, self.play_slow = 1, False
         self._reset()
 
     # ---- construction ------------------------------------------------------
@@ -350,6 +389,34 @@ class MockSource:
     def open_chat(self, text):
         print(f"[mock] chat: {text!r}", flush=True)
 
+    def cam_switch(self, num, group, camera):
+        self.cam_group, self.cam_number = group, camera
+        self.focus(next((c["idx"] for c in self.cars if str(c["num"]) == str(num)), self.cam), num)
+
+    def cam_follow(self, mode, group, camera):
+        print(f"[mock] camera follows {mode}", flush=True)
+        self.cam_group, self.cam_number = group, camera
+
+    def cam_state(self, bits):
+        self.cam_bits = bits | (self.cam_bits & 3)
+
+    def cam_move(self, axes):
+        if axes:
+            print(f"[mock] camera move {axes}", flush=True)
+
+    def cam_tap(self, name):
+        print(f"[mock] camera key {name}", flush=True)
+
+    def replay_speed(self, speed, slow):
+        self.play_speed, self.play_slow = speed, slow
+
+    def replay_jump(self, mode):
+        print(f"[mock] replay search {mode}", flush=True)
+
+    def replay_at(self, session, ms):
+        print(f"[mock] replay at {ms / 1000:.1f} s", flush=True)
+        self.watch = ms / 1000
+
     def session_info(self, raw):
         if self._sent_info:
             return None
@@ -381,6 +448,12 @@ class MockSource:
                 "DriverCarEstLapTime": 100.0, "Drivers": drivers,
                 "DriverTires": [{"TireIndex": 0, "TireCompoundType": "Hard"}, {"TireIndex": 1, "TireCompoundType": "Wet"}],
             },
+            "CameraInfo": {"Groups": [
+                {"GroupNum": 1, "GroupName": "Nose", "Cameras": [{"CameraNum": 1, "CameraName": "CamNose"}]},
+                {"GroupNum": 2, "GroupName": "Chase", "Cameras": [{"CameraNum": 1, "CameraName": "CamChase"}]},
+                {"GroupNum": 3, "GroupName": "TV1", "Cameras": [{"CameraNum": n, "CameraName": f"TV {n}"} for n in range(1, 5)]},
+                {"GroupNum": 4, "GroupName": "Scenic", "IsScenic": True, "Cameras": [{"CameraNum": 1, "CameraName": "Scenic_01"}]},
+            ]},
             "SessionInfo": {"Sessions": [
                 {"SessionNum": 0, "SessionType": self.session, "SessionName": self.session.upper(),
                  "SessionTrackRubberState": "moderate usage",
@@ -515,6 +588,8 @@ class MockSource:
             "SessionLapsTotal": 32767, "SessionTimeTotal": self.race_len,
             "SessionTimeOfDay": 12 * 3600 + t, "SessionInfoUpdate": 1, "PlayerCarIdx": 0,
             "CamCarIdx": int(time.perf_counter() / 10) % len(self.cars) if self.cam == "cycle" else (self.cam or 0),
+            "CamGroupNumber": self.cam_group, "CamCameraNumber": self.cam_number, "CamCameraState": self.cam_bits,
+            "ReplayPlaySpeed": self.play_speed, "ReplayPlaySlowMotion": self.play_slow,
             "PlayerTireCompound": self.tyre, "PitSvTireCompound": self.sv_tyre, "PitSvFlags": self.sv_flags, "PitSvFuel": self.sv_fuel,
             "IsOnTrack": not self.out, "OnPitRoad": pit, "Lap": max(0, lapc[0] + 1), "LapCompleted": lapc[0],
             "LapDistPct": mp, "LapDeltaToBestLap": 0.35 * math.sin(t / 9.0) + 0.12 * math.sin(t / 2.3),

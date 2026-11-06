@@ -23,6 +23,7 @@ export const WIDGETS = {
   weather: { name: 'Weather', mw: 4, mh: 3, w: 5, h: 4 },
   laplog: { name: 'Lap times', mw: 8, mh: 3, w: 14, h: 12 },
   events: { name: 'Race events', mw: 6, mh: 3, w: 10, h: 4 },
+  camera: { name: 'Camera control', mw: 8, mh: 6, w: 10, h: 8 },
 };
 export const SESSIONS = [['test', 'Test'], ['practice', 'Practice'], ['qualify', 'Qualify'], ['race', 'Race'], ['over', 'Race over'], ['out', 'In garage']];
 

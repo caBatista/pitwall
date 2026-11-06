@@ -100,7 +100,7 @@ body[data-kind="qualify"] .board:not(.solo), body[data-kind="test"] .board:not(.
   grid-template-areas: "standings map" "standings map" "standings bottom";
 }
 /* race over: the standings as the results (see .srow.over), next to the track map */
-body[data-over] .board > :not(#w-standings, #w-map, #w-events, .col-bottom) { display: none; }
+body[data-over] .board > :not(#w-standings, #w-map, #w-events, #w-camera, .col-bottom) { display: none; }
 body[data-over]:not([data-out]) .board > .col-bottom { display: none; }
 body[data-over] .board:not(.solo) { grid-template-columns: minmax(620px, 1fr) 1fr; grid-template-rows: 1fr; grid-template-areas: "standings map"; }
 /* out of the car: the standings, Race Events over the map at its usual size */
@@ -478,6 +478,32 @@ sup.inv { color: var(--accent); font-size: .8em; line-height: 0; margin-left: 1p
   all: unset; padding: 7px 10px; border-radius: 4px; cursor: pointer; font: 600 12.5px var(--num); color: var(--txt); white-space: nowrap;
 }
 .ctx button:hover { background: var(--accent); color: var(--ink, #111112); }
+
+/* ---------- camera control ---------- */
+#w-camera { display: none; }
+.board.solo #w-camera { display: flex; }
+/* out of the car it takes its turn in the place of the map, with room for the sticks */
+body[data-out][data-slot="camera"] .board:not(.solo) #w-camera { display: flex; grid-area: map; }
+body[data-out][data-slot="camera"] .board:not(.solo) > .col-bottom { display: none; }
+body[data-out][data-kind][data-slot="camera"] .board:not(.solo) { grid-template-rows: minmax(0, 1fr) 520px; }
+.cam { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; padding: 0 14px 12px; overflow-y: auto; }
+.cam-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cam-row label { display: flex; flex: 1 1 110px; flex-direction: column; gap: 3px; min-width: 0; color: var(--dim); font: 500 9.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+.cam select, .cam input[type=number] { width: 100%; min-width: 0; height: 28px; padding: 3px 7px; border: 1px solid var(--line-2); border-radius: 7px; background: var(--bg-2); color: var(--txt); font: 500 12.5px var(--sans); }
+.cam select option { background: var(--card); color: var(--txt); }
+.cam-h { margin-top: 2px; color: var(--accent); font: 900 13px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; }
+.cam-b { min-width: 30px; height: 28px; padding: 0 9px; border: 1px solid var(--line-2); border-radius: 7px; background: var(--bg-2); color: var(--txt); font: 600 11px var(--mono); cursor: pointer; }
+.cam-b:hover:not(:disabled) { border-color: var(--accent); }
+.cam-b.on { border-color: var(--accent); background: var(--accent); color: var(--ink); }
+.cam-b:disabled { opacity: .35; cursor: default; }
+.cam-sticks { display: flex; flex-wrap: wrap; justify-content: space-around; gap: 12px; }
+.cam-stick { display: flex; flex-direction: column; align-items: center; gap: 5px; color: var(--dim); font: 500 9.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+.joy { position: relative; width: 110px; height: 110px; border: 1px solid var(--line-2); border-radius: 50%; background: radial-gradient(circle, var(--card-2), var(--bg-2)); touch-action: none; cursor: grab; }
+.joy.v { width: 44px; border-radius: 22px; }
+.joy.h { width: 110px; height: 44px; border-radius: 22px; }
+.joy i { position: absolute; left: 50%; top: 50%; width: 38px; height: 38px; margin: -19px 0 0 -19px; border-radius: 50%; background: var(--accent); box-shadow: 0 2px 8px rgba(0, 0, 0, .5); pointer-events: none; }
+.joy.held { cursor: grabbing; }
+.cam-off { padding: 26px 8px; color: var(--dim); text-align: center; }
 
 /* ---------- race events ---------- */
 .ev-past { max-width: 62%; padding: 3px 7px; border: 1px solid var(--line-2); border-radius: 7px; background: var(--bg-2); color: var(--dim); font: 500 11px var(--mono); }

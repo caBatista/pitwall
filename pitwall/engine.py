@@ -298,6 +298,8 @@ class Engine:
         self.ev = EventLog()
         self.in_car = False
         self._info = None     # the session info, for the replay's engine
+        self._lap_at = {}     # car -> lap -> session time it began: to go to a lap in the replay
+        self.cam_now, self.session_num = {}, 0
         self._live, self._live_at = None, 0.0   # the last frame that was the present
         self._replay = None   # the engine that reads the replay, see update()
         self.wx_hist = deque(maxlen=720)  # 5 s samples = 1 hour
@@ -362,6 +364,9 @@ class Engine:
             "category": wk.get("Category"),
             "seriesId": wk.get("SeriesID"),
             "subId": wk.get("SubSessionID"),
+            "cameras": [{"n": g.get("GroupNum"), "name": g.get("GroupName"), "scenic": bool(g.get("IsScenic")),
+                         "cams": [{"n": c.get("CameraNum"), "name": c.get("CameraName")} for c in g.get("Cameras") or []]}
+                        for g in (info.get("CameraInfo") or {}).get("Groups") or []],
             "replayFile": str(wk.get("SimMode") or "").lower() == "replay",   # a saved replay, not a live session
             "sectors": [round(float(x.get("SectorStartPct") or 0), 5) for x in (info.get("SplitTimeInfo") or {}).get("Sectors") or []],
         }
@@ -476,6 +481,11 @@ class Engine:
         return fix
 
     def update(self, raw):
+        self.cam_now = self._cam(raw)
+        self.session_num = raw.get("SessionNum") or 0
+        return self._frame(raw)
+
+    def _frame(self, raw):
         """A frame of state. While the driver watches the replay all the telemetry is that moment of the
         race, the session and the clock included, and nothing live comes through: the board stays on the
         last live frame, with what still arrives on top (the clock, the results in SessionInfo). The replay
@@ -487,6 +497,16 @@ class Engine:
                 self._live, self._live_at = st, time.monotonic()
             return st
         return self._seen_from_replay(raw, behind)
+
+    @staticmethod
+    def _cam(raw):
+        """The camera and the replay, always as they are: nothing here belongs to a moment of the race."""
+        return {"i": raw.get("CamCarIdx"), "g": raw.get("CamGroupNumber"), "c": raw.get("CamCameraNumber"), "st": raw.get("CamCameraState") or 0,
+                "speed": raw.get("ReplayPlaySpeed") or 0, "slow": bool(raw.get("ReplayPlaySlowMotion")), "replay": bool(raw.get("IsReplayPlaying"))}
+
+    def lap_start(self, i, lap):
+        """When this car began this lap, if it was seen."""
+        return self._lap_at.get(i, {}).get(lap)
 
     def _seen_from_replay(self, raw, behind):
         if self._replay is None:
@@ -502,7 +522,7 @@ class Engine:
             session["static"] = seen["session"].get("static")
         if session.get("timeRemain") is not None:
             session["timeRemain"] = max(0.0, session["timeRemain"] - (time.monotonic() - self._live_at))
-        return self._with_results({**live, "session": session})
+        return self._with_results({**live, "session": session, "cam": self._cam(raw)})
 
     def _with_results(self, st):
         """Positions and lap times keep coming in SessionInfo, as each car crosses the line."""
@@ -614,6 +634,7 @@ class Engine:
             self._flag_lap = None
             self._lap_sync = {}
             self._laps, self._seen_last, self._race_laps = {}, None, None
+            self._lap_at = {}
             self._lap_seen = 0
             self._want, self._want_raw = None, None
             self._mylaps, self._my_last, self._fuel_at_line, self._my_lapc = deque(maxlen=60), raw.get("LapLastLapTime"), None, None
@@ -684,6 +705,8 @@ class Engine:
         for i in present:
             laps = lapc[i] if lapc[i] is not None and lapc[i] > -2 else 0
             tot[i] = laps + max(0.0, pct[i]) + self.lap_fix(i, laps, pct[i], t)
+            if lapc[i] is not None and lapc[i] >= 0:
+                self._lap_at.setdefault(i, {}).setdefault(lapc[i] + 1, t)
 
         # ordering. Race, while racing: live order by distance covered (laps + lap fraction), the
         # way overlays do it - CarIdxPosition only changes when a car crosses the line. Cars not
@@ -1113,6 +1136,7 @@ class Engine:
             },
             "cars": cars, "rel": rel, "fuel": fuel, "pit": pit, "wx": wx,
             "talk": talk if talk is not None and talk >= 0 else None,   # car on the radio right now
+            "cam": self._cam(raw),
             "map": {"status": self.mapper.status, "progress": round(self.mapper.progress, 3),
                     "ver": self.mapper.version},
         }
