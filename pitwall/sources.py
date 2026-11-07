@@ -89,6 +89,16 @@ class IRacingSource:
         else:
             self.ir.pit_command(irsdk.PitCommandMode.clear_fuel)
 
+    def pit_tyres(self, on):
+        """Change the four tyres at the next stop, keeping the pressures; off unticks them."""
+        import irsdk  # noqa: WPS433
+        m = irsdk.PitCommandMode
+        if on:
+            for corner in (m.lf, m.rf, m.lr, m.rr):
+                self.ir.pit_command(corner, 0)
+        else:
+            self.ir.pit_command(m.clear_tires)
+
     def pit_tyre(self, compound, change):
         """Tyre compound for the next stop; change: also tick the four tyres (keeping the pressures)."""
         import irsdk  # noqa: WPS433
@@ -361,6 +371,9 @@ class MockSource:
     def pit_fuel(self, liters):
         self.sv_fuel = float(liters) or self.sv_fuel
         self.sv_flags = self.sv_flags | 0x10 if liters > 0 else self.sv_flags & ~0x10
+
+    def pit_tyres(self, on):
+        self.sv_flags = self.sv_flags | 0xF if on else self.sv_flags & ~0xF
 
     def pit_tyre(self, compound, change):
         self.sv_tyre = compound

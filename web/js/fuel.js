@@ -58,12 +58,18 @@ function picker(el, value, change) {
  * server sets iRacing's pit menu to what is missing as I enter the pit lane (nothing, if nothing is).
  * Practice, qualifying and test sessions only show the readings.
  */
+// a tyre, as on the Weather's tyre button
+const TYRE = '<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="6" cy="6" r="1.7" fill="currentColor"/></svg>';
+
 export const fuel = {
   id: 'w-fuel',
   mount(root, S) {
     root.innerHTML = `
       <div class="card-h"><div class="ttl"><i></i>Fuel</div>
-        <label class="switch" id="fu-sw" title="Sets the fuel you need as you enter the pits"><span>Auto fuel</span><input type="checkbox" id="fu-auto"><i></i></label></div>
+        <div class="fu-sws">
+          <label class="switch tyres" id="fu-tsw" title="Change the four tyres at the next stop (iRacing's pit menu)"><span>${TYRE}Tyres</span><input type="checkbox" id="fu-tyres"><i></i></label>
+          <label class="switch" id="fu-sw" title="Sets the fuel you need as you enter the pits"><span>Auto fuel</span><input type="checkbox" id="fu-auto"><i></i></label>
+        </div></div>
       <div class="fuel">
         <div class="fu-top">
           <div class="fu-lvl">
@@ -92,6 +98,9 @@ export const fuel = {
     picker(this.q('#fu-wheel'), prefs.reserve, (v) => { prefs.reserve = v; savePrefs(); S.invalidate(); });
     tgt.addEventListener('input', () => { prefs.targetLaps = Math.max(1, Number(tgt.value) || 1); savePrefs(); });
     sw.addEventListener('change', () => { prefs.autoFuel = sw.checked; savePrefs(); });
+    // what iRacing has ticked is the truth: the switch only asks, and shows the answer when it comes
+    this.tyres = this.q('#fu-tyres');
+    this.tyres.addEventListener('change', () => { S.send({ cmd: 'pit_tyres', on: this.tyres.checked }); this.asked = performance.now(); });
     this.tgt = tgt;
     this.frac = 0;
   },
@@ -102,6 +111,9 @@ export const fuel = {
     const f = st.fuel, q = this.q;
     const race = st.session.kind === 'race';
     for (const id of ['#fu-sw', '#fu-r-tgt', '#fu-wheel', '#fu-fin']) q(id).hidden = !race;
+    const pit = st.pit || {};
+    q('#fu-tsw').hidden = !pit.ok;   // pit commands only from the car
+    if (!(performance.now() - (this.asked || 0) < 1500)) this.tyres.checked = !!pit.tyres;
 
     // the server does the refuelling, even with this window out of sight: it has to know the settings
     const cfg = `${prefs.autoFuel}|${prefs.reserve}|${prefs.targetLaps}`;

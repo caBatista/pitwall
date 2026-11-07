@@ -15,6 +15,8 @@ const BRIEF = new Set(['blue', 'yellow']), SETTLE_MS = 700, FADE_OUT = 3000;
 const STEP = 50, LOW = 0.45, FADE_IN = 300;
 
 const bg = document.getElementById('flag-bg'), bar = document.getElementById('flag-test');
+const ONCE = { white: 10 * 60 * 1000 };   // ms: back after another flag in the same lap, it isn't new
+const onceAt = {};
 let faded = 0, waiting = null, since = 0;   // a flag of a moment isn't shown, see BRIEF
 let real = null, testing = null, timer = 0, pulse = 0, shown = null, ending = false;
 
@@ -71,6 +73,10 @@ export function setFlag(flag, home) {
   }
   if (flag !== real) {
     waiting = null;
+    const now = performance.now();
+    if (ONCE[flag] && !testing && now - (onceAt[flag] ?? -1e12) < ONCE[flag]) flag = null;
+    else if (ONCE[flag]) onceAt[flag] = now;
+    if (flag === real) return;
     real = flag;
     ending = false;
     if (!testing) show(flag);

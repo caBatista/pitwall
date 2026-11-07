@@ -998,6 +998,7 @@ class Engine:
             if self._my_lapc is not None and lapc[me] > (self._my_lapc or 0):
                 used = (self._fuel_at_line - my_fuel) if self._fuel_at_line is not None and my_fuel is not None else None
                 self._pending_lap = {"lap": lapc[me], "temp": raw.get("TrackTemp"), "fuel": my_fuel,
+                                     "sn": raw.get("SessionNum") or 0, "end": raw.get("SessionTime"),
                                      "used": round(used, 3) if used is not None and used >= 0 else None}
             self._my_lapc, self._fuel_at_line = lapc[me], my_fuel
         mylast = raw.get("LapLastLapTime")
@@ -1005,6 +1006,9 @@ class Engine:
             pend = getattr(self, "_pending_lap", None)
             if pend and mylast and mylast > 0:
                 pend["time"] = round(mylast, 3)
+                end = pend.pop("end", None)
+                if end is not None:
+                    pend["t0"] = round(end - mylast, 2)   # where it began in the replay: the lap counters don't match there
                 self._mylaps.appendleft(pend)
                 self._pending_lap = None
             self._my_last = mylast
@@ -1115,6 +1119,7 @@ class Engine:
             "ok": bool(raw.get("IsOnTrack")),   # iRacing only takes pit commands from the car
             "tyre": self.tyre_on, "tyreSet": self.tyres.get(raw.get("PitSvTireCompound"), self.tyre_on),
             "want": self._want,
+            "tyres": int(raw.get("PitSvFlags") or 0) & 0xF == 0xF,   # all four ticked for the next stop
             "fuel": round(raw.get("PitSvFuel") or 0, 1) if int(raw.get("PitSvFlags") or 0) & 0x10 else 0,
         }
 

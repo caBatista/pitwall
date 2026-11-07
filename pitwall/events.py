@@ -284,7 +284,8 @@ class EventLog:
         if s == OFF_TRACK and not p:
             t0 = self._off.setdefault(i, f.t)
             if t0 and f.t - t0 >= OFF_MIN:
-                if f.t - self._off_t.get(i, -1e9) > OFF_COOLDOWN and f.kind != "test":
+                # mine are already there as an incident, with the count: twice would be the same moment
+                if f.t - self._off_t.get(i, -1e9) > OFF_COOLDOWN and f.kind != "test" and i != f.me:
                     self.add(t0, "off", i=i)
                 self._off[i] = 0   # told: not again until back on track
                 self._off_t[i] = f.t

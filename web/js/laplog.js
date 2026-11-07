@@ -7,7 +7,7 @@ import { lapTime, fmt } from './util.js';
  */
 export const laplog = {
   id: 'w-laplog',
-  mount(root) {
+  mount(root, S) {
     root.innerHTML = `
       <div class="card-h"><div class="ttl"><i></i>Lap times</div></div>
       <div class="ll-best"><small>Personal session best</small><b id="ll-pb">-:--.---</b><span id="ll-tt"></span></div>
@@ -16,6 +16,11 @@ export const laplog = {
     this.pb = root.querySelector('#ll-pb');
     this.tt = root.querySelector('#ll-tt');
     this.last = '';
+    // out of the car: to that lap in the replay
+    this.body.addEventListener('click', (e) => {
+      const r = e.target.closest('[data-lap]')?.dataset, s = S.st?.session;
+      if (r && s && !s.inCar) S.send({ cmd: 'replay_lap', sn: Number(r.sn), t: Number(r.lap), i: s.player });
+    });
   },
 
   update(S) {
@@ -34,7 +39,7 @@ export const laplog = {
       const prev = laps[k + 1];
       const d = l.time && prev?.time ? l.time - prev.time : null;
       const pb = l.time && best ? l.time - best : null;
-      return `<div class="rrow lrow ${l.time === best ? 'pbrow' : ''}">
+      return `<div class="rrow lrow ${l.time === best ? 'pbrow' : ''}" ${l.t0 != null ? `data-lap="${l.t0}" data-sn="${l.sn}"` : ''}>
         <div class="rpos">${l.lap}</div>
         <div class="t ${l.time === best ? 'cb' : ''}">${l.time ? lapTime(l.time) : '-:--.---'}</div>
         <div class="dl ${cls(d)}">${sgn(d)}</div>

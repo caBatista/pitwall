@@ -647,3 +647,10 @@ body[data-flag] {
 }
 .s-body:last-child { margin-bottom: 8px; }   /* the lap log: nothing under it */
 #pc-box::before { content: "\a0"; font: 500 10px var(--mono); }   /* the place of a title: the time on the line of the SOF value */
+body[data-out] .lrow[data-lap] { cursor: pointer; }
+body[data-out] .lrow[data-lap]:hover { background: rgba(255, 255, 255, .06); }
+/* the fuel card's switches: tyres for the next stop, auto fuel */
+.fu-sws { display: flex; align-items: center; gap: 14px; }
+.switch.tyres span { display: inline-flex; align-items: center; gap: 5px; }
+.switch.tyres svg { width: 12px; height: 12px; }
+.switch.tyres:has(input:checked) span { color: var(--accent); }

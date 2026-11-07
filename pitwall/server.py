@@ -109,10 +109,15 @@ class App:
                         self.engine.mapper.reset()
                     elif data.get("cmd") == "auto_fuel":
                         self.set_auto_fuel(data)
+                    elif data.get("cmd") == "pit_tyres":
+                        if self.engine.in_car:   # iRacing only takes pit commands from the car
+                            self.source.pit_tyres(bool(data.get("on")))
                     elif data.get("cmd") == "pit_tyre":
                         self.pit_tyre(data.get("tyre"))
                     elif data.get("cmd") == "replay":
                         self.replay(data.get("id"))
+                    elif data.get("cmd") == "replay_lap":
+                        self.replay_lap(data.get("sn"), data.get("t"), data.get("i"))
                     elif data.get("cmd") == "replay_live":
                         if not self.engine.in_car:
                             self.source.replay_live()
@@ -283,6 +288,12 @@ class App:
             session, ms, car = hit
             d = self._driver(car)
             self.source.replay(session, ms, d["num"] if d else None)
+
+    def replay_lap(self, session, t, i):
+        """A lap of the lap log, from its start: mine, in the chase camera."""
+        if isinstance(session, int) and isinstance(t, (int, float)) and not self.engine.in_car:
+            d = self._driver(i)
+            self.source.replay(session, int(max(0.0, t) * 1000), d["num"] if d else None)
 
     def chat(self, i, to):
         d = self._driver(i)

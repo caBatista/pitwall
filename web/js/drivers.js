@@ -36,9 +36,16 @@ export function driverMenu(e, S, i, before) {
 }
 
 export function driverActions(root, S) {
-  root.addEventListener('click', (e) => {
-    const r = e.target.closest('.rrow[data-i]');
-    if (r) S.send({ cmd: 'focus', i: Number(r.dataset.i) });
+  // press and release on the same driver, not 'click': the rows are rewritten up to 20 times a second, and a
+  // click whose target changed in between never comes
+  let down = null;
+  root.addEventListener('pointerdown', (e) => {
+    down = e.button === 0 ? e.target.closest('.rrow[data-i]')?.dataset.i ?? null : null;
+  });
+  root.addEventListener('pointerup', (e) => {
+    const i = e.button === 0 ? e.target.closest('.rrow[data-i]')?.dataset.i : null;
+    if (i != null && i === down) S.send({ cmd: 'focus', i: Number(i) });
+    down = null;
   });
   root.addEventListener('contextmenu', (e) => {
     const r = e.target.closest('.rrow[data-i]');
