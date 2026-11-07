@@ -10,7 +10,7 @@ import ctypes
 import time
 from ctypes import wintypes
 
-from .chat import INPUT_KEYBOARD, KEYUP, _api, _exe, _Input, _Key, _Union
+from .chat import INPUT_KEYBOARD, KEYUP, _api, _exe, _Input, _Key, _Union, focus_sim, sim_window
 
 POLL = 0.5     # s between looks at the window in front
 SETTLE = 0.4   # s it has to stay in front: alt-tabbing past it isn't focusing on it
@@ -94,9 +94,16 @@ def watch():
         was = False
         while True:
             time.sleep(POLL)
-            if enabled and (in_car or not only_car):
-                if only_car and not was:
-                    w.last = None   # getting in the car counts as the sim taking the focus
+            if enabled and only_car and in_car and not was:
+                # into the car by a key, with the focus anywhere (the board, the desktop): the sim is brought to
+                # the front itself, then full screen
+                hwnd = sim_window()
+                if hwnd and is_windowed(hwnd) and focus_sim():
+                    time.sleep(SETTLE)
+                    if u.GetForegroundWindow() == hwnd and is_windowed(hwnd):
+                        press_alt_enter()
+                w.last = u.GetForegroundWindow()
+            elif enabled and (in_car or not only_car):
                 w.step()
             was = in_car
     except Exception as e:  # noqa: BLE001
