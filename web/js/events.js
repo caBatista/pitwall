@@ -10,16 +10,17 @@ import { driverMenu } from './drivers.js';
  * Newest at the bottom, under a heading per lap. Nothing runs while the card is hidden.
  * The races of the last 30 days can be read again (a click only goes to the replay of the race in the sim).
  */
-const GROUPS = { pass: 'Battles', inc: 'Incidents', pit: 'Pits', lap: 'Laps', flag: 'Flags' };
+const GROUPS = { pass: 'Battles', inc: 'Incidents', pit: 'Pits', lap: 'Bests', laps: 'Laps', flag: 'Flags' };
 const GROUP_OF = {
-  pass: 'pass', fight: 'pass', inc: 'inc', off: 'inc', stop: 'inc', out: 'inc', pit: 'pit', fast: 'lap', pb: 'lap', q: 'lap',
+  pass: 'pass', fight: 'pass', inc: 'inc', off: 'inc', stop: 'inc', out: 'inc', pit: 'pit', lapx: 'laps', fast: 'lap', pb: 'lap', q: 'lap',
   pen: 'flag', finish: 'flag',
 };
 const SESSIONS = { practice: 'Practice', qualify: 'Qualify', race: 'Race', test: 'Test' };
 const TAG = {
-  pass: 'Pass', fight: 'Fight', inc: 'Inc', off: 'Off', stop: 'Stop', out: 'Out', pit: 'Pit', fast: 'Fast', pb: 'PB', q: 'Lap', pen: 'Flag', finish: 'Finish',
+  pass: 'Pass', fight: 'Fight', inc: 'Inc', off: 'Off', stop: 'Stop', out: 'Out', pit: 'Pit', lapx: 'Lap', fast: 'Fast', pb: 'PB', q: 'Lap', pen: 'Flag', finish: 'Finish',
   caution: 'Caution', clear: 'Clear', red: 'Red',
 };
+const INC = (n) => (n >= 4 ? 'car contact' : n >= 2 ? 'lost control or contact' : 'off track');
 const PEN = { dq: 'disqualified', black: 'black flag', repair: 'meatball flag', warn: 'slow down' };
 const MAX_ROWS = 300;   // the latest ones: nobody scrolls through more, and it keeps the page light
 
@@ -31,11 +32,12 @@ function line(C, e, ref) {
   switch (e.k) {
     case 'pass': return `${who(e.i)} passes ${who(e.j)}${e.p === 1 ? ' for the lead' : e.p ? ` for P${e.p}` : ''}`;
     case 'fight': return e.j === ref ? `${who(e.j)} defends from ${who(e.i)} <i>${e.d}s</i>` : `${who(e.i)} attacks ${who(e.j)} <i>${e.d}s</i>`;
-    case 'inc': return `${who(e.i)} ${e.n >= 4 ? 'car contact' : e.n >= 2 ? 'lost control or contact' : 'off track'}${e.n >= 2 && e.j != null ? ` with ${who(e.j)}` : ''} <i>${e.n}x</i>`;
+    case 'inc': return `${who(e.i)} ${e.n0 != null ? `${INC(e.n0)}, then ${INC(e.n)}` : INC(e.n)}${e.n >= 2 && e.j != null ? ` with ${who(e.j)}` : ''} <i>${e.n}x</i>`;
     case 'off': return `${who(e.i)} off track`;
     case 'stop': return `${who(e.i)} stopped on track`;
     case 'out': return `${who(e.i)} left the track`;
     case 'pen': return `${who(e.i)} ${PEN[e.f] || e.f}`;
+    case 'lapx': return `${who(e.i)} lap ${e.cl}${e.d ? ` <i>${lapTime(e.d)}</i>` : ''}`;
     case 'pit': return `${who(e.i)} pit stop <i>${stint(e.d)}</i>`;
     case 'fast': return `${who(e.i)} fastest lap of the class <i>${lapTime(e.v)}</i>`;
     case 'pb': return `${who(e.i)} personal best <i>${lapTime(e.v)}</i>`;
@@ -80,7 +82,9 @@ export const events = {
       const d = b.dataset;
       if (d.id) {
         this.on = b.id;
-        S.send({ cmd: 'replay', id: Number(d.id) });
+        const [, sn, t] = /^L(\d+)-/.test(d.id) ? [0, Number(d.sn), Number(d.t)] : [];
+        if (sn != null) S.send({ cmd: 'replay_lap', sn, t, i: Number(d.i) });   // a lap: from its start
+        else S.send({ cmd: 'replay', id: Number(d.id) });
         this.body.querySelector('.ev.on')?.classList.remove('on');
         b.classList.add('on');
         return;
@@ -92,9 +96,23 @@ export const events = {
     });
   },
 
+  /** Every lap of the driver, from when each began (the start of the next one gives its time): a row each. */
+  laps(C, ref) {
+    if (prefs.evOff.includes('laps')) return [];
+    const out = [];
+    for (const [sn, cars] of Object.entries(C.evLaps || {})) {
+      const starts = Object.entries(cars?.[ref] || {}).map(([n, t]) => [Number(n), t]).sort((a, b) => a[0] - b[0]);
+      starts.forEach(([n, t], k) => {
+        const next = starts[k + 1];
+        out.push({ id: `L${sn}-${n}`, k: 'lapx', sn: Number(sn), t, i: ref, cl: n, d: next && next[0] === n + 1 ? next[1] - t : null });
+      });
+    }
+    return out;
+  },
+
   list(C, ref) {
     const pick = (e) => (e.i === ref || e.j === ref) && !prefs.evOff.includes(GROUP_OF[e.k]);
-    return C.events.filter(pick).sort((a, b) => a.sn - b.sn || a.t - b.t || a.id - b.id).slice(-MAX_ROWS);
+    return [...C.events, ...this.laps(C, ref)].filter(pick).sort((a, b) => a.sn - b.sn || a.t - b.t || a.id - b.id).slice(-MAX_ROWS);
   },
 
   // nothing happened, or something did and the filters leave it out: not the same thing to say
@@ -121,7 +139,7 @@ export const events = {
       const at = mine ?? own(e.i, e.cl);
       if (mine > (lap ?? 0)) { lap = mine; html += `<div class="ev-lap">Lap ${lap}</div>`; }
       const color = S.classMap.get(S.drivers[e.i]?.cls)?.color;
-      html += `<button id="ev${e.id}" class="ev ${tone(e, ref)} g-${GROUP_OF[e.k] || 'flag'} k-${e.k}${`ev${e.id}` === this.on ? ' on' : ''}" data-id="${e.id}"${color ? ` style="--cc:${color}"` : ''}>
+      html += `<button id="ev${e.id}" class="ev ${tone(e, ref)} g-${GROUP_OF[e.k] || 'flag'} k-${e.k}${`ev${e.id}` === this.on ? ' on' : ''}" data-id="${e.id}"${e.k === 'lapx' ? ` data-sn="${e.sn}" data-t="${e.t}" data-i="${e.i}"` : ''}${color ? ` style="--cc:${color}"` : ''}>
         <em>${TAG[e.k] || ''}</em><span>${line(S, e, ref)}</span><time title="${clock(e.t)}">${at ? `L${at}` : clock(e.t)}</time></button>`;
     }
     return html;

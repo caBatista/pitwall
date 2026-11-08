@@ -250,7 +250,7 @@ export const standings = {
       rows.push(head('all', 'Overall', 'var(--accent)', all.length, null, all[0]?.lap));
       for (const c of all) rows.push(rowHtml(c, false));
     }
-    if (!rows.length) rows.push({ key: 'none', cls: 'map-note', html: '<b>No cars yet</b>Cars appear here as soon as they are on track.' });
+    if (!rows.length) rows.push({ key: 'none', cls: 'map-note', html: st.session.kind === 'qualify' ? '<b>No laps yet</b>Nobody has completed a lap.' : '<b>No cars yet</b>Cars appear here as soon as they are on track.' });
     // the chips are as wide as the widest in the whole field, hidden rows included: measure with them all
     this.fx ??= posFx(this.body);
     this.fx.before(st.cars);

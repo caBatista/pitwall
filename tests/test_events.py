@@ -310,7 +310,10 @@ def test_my_own_points_are_exact(engine):
     setup(engine)
     run(engine, 0, 4, lambda t: racing({0: (5, .5)}, t, PlayerCarMyIncidentCount=0 if t < 2 else 1))
     run(engine, 4, 8, lambda t: racing({0: (5, .5)}, t, PlayerCarMyIncidentCount=1 if t < 6 else 5))
-    assert [(e["n"], e["total"]) for e in kinds(engine, "inc")] == [(1, 1), (4, 5)]
+    # 4 s apart: the same moment, as iRacing's off track turned into a loss of control
+    assert [(e.get("n0"), e["n"], e["total"]) for e in kinds(engine, "inc")] == [(1, 5, 5)]
+    run(engine, 8, 30, lambda t: racing({0: (5, .5)}, t, PlayerCarMyIncidentCount=5 if t < 25 else 7))
+    assert [(e["n"], e["total"]) for e in kinds(engine, "inc")][-1] == (2, 7)   # later on: one of its own
 
 
 def test_each_car_keeps_its_own_lap(engine):
@@ -561,3 +564,11 @@ def test_an_offline_session_comes_back_only_if_it_was_saved_moments_ago(tmp_path
     old = time.time() - 3600
     os.utime(tmp_path / "offline-100.json", (old, old))
     assert log._recent_offline() is None
+
+
+def test_a_race_saved_before_the_join_gets_its_lost_incident_back():
+    from pitwall.events import mend_incidents
+    items = [{"k": "inc", "sn": 2, "t": 764.3, "i": 0, "n": 1, "total": 3}, {"k": "inc", "sn": 2, "t": 946.7, "i": 0, "n": 1, "total": 4},
+             {"k": "inc", "sn": 2, "t": 2049.1, "i": 0, "n": 1, "total": 6}]
+    mend_incidents(items)
+    assert [(e.get("n0"), e["n"], e["total"]) for e in items] == [(None, 1, 3), (1, 2, 5), (None, 1, 6)]

@@ -73,6 +73,7 @@ class App:
         self._track_ver = -1
         self._drivers_ver = -1
         self._wx_sent = 0.0
+        self._laps_sent, self._laps_t = -1, 0.0
         self._connected = False
         self.auto_fuel = None   # (reserve, laps) with Auto fuel on, from the fuel card
         self.dev = False        # run by Pitwall Dev.bat: the buttons to try things out
@@ -99,6 +100,7 @@ class App:
             await ws.send_str(dumps(_clean(self.engine.track_msg())))
             await ws.send_str(dumps(self.engine.wx_msg()))
             await ws.send_str(dumps({"type": "events", "all": self.engine.ev.items}))
+            await ws.send_str(dumps({"type": "laps", "laps": self.engine.ev.laps}))
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
                     try:
@@ -109,6 +111,8 @@ class App:
                         self.engine.mapper.reset()
                     elif data.get("cmd") == "auto_fuel":
                         self.set_auto_fuel(data)
+                    elif data.get("cmd") == "key":   # pressed on Pitwall's window: the sim gets it too
+                        self.source.key(data.get("vk"), bool(data.get("d")))
                     elif data.get("cmd") == "pit_tyres":
                         if self.engine.in_car:   # iRacing only takes pit commands from the car
                             self.source.pit_tyres(bool(data.get("on")))
@@ -358,6 +362,11 @@ class App:
         if self.engine.mapper.version != self._track_ver:
             self._track_ver = self.engine.mapper.version
             out.append(dumps(_clean(self.engine.track_msg())))
+        laps = ev.laps if (ev := self.engine.ev) else {}
+        count = sum(len(v) for cars in laps.values() for v in cars.values())
+        if count != self._laps_sent and time.time() - self._laps_t > 2:   # the Laps filter of Race Events
+            self._laps_sent, self._laps_t = count, time.time()
+            out.append(dumps({"type": "laps", "laps": laps}))
         if time.time() - self._wx_sent > 5:
             self._wx_sent = time.time()
             out.append(dumps(self.engine.wx_msg()))

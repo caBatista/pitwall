@@ -52,12 +52,21 @@ def binding(name, default, keys=None):
     return mod, (vk, ctypes.windll.user32.MapVirtualKeyW(vk, 0))
 
 
+EXTENDED = {0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E, 0x5B, 0x5C, 0x6F, 0x90, 0xA3, 0xA5}
+
+
+def forward_key(vk, down):
+    """A key pressed on Pitwall's window, passed on to the sim as it is: down and up, so holding works."""
+    if isinstance(vk, int) and 0 < vk < 256:
+        post_key(down, (vk, ctypes.windll.user32.MapVirtualKeyW(vk, 0)))
+
+
 def post_key(down, key):
     """One key message to the sim's window, wherever the focus is."""
     hwnd = chat.sim_window()
     if hwnd:
         vk, scan = key
-        flags = 1 | (scan << 16) | (0 if down else 0xC0000000)
+        flags = 1 | (scan << 16) | (0x1000000 if vk in EXTENDED else 0) | (0 if down else 0xC0000000)
         ctypes.windll.user32.PostMessageW(hwnd, 0x100 if down else 0x101, vk, flags)
 
 

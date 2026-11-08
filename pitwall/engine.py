@@ -586,7 +586,7 @@ class Engine:
 
     def _finished(self, st):
         """The result of a finished race, whatever moment the replay is on: no time left, and the footer is the
-        driver's own end of the race, not the car on camera or that moment."""
+        driver's own end of the race, not that moment. The highlight follows the car on camera, as live."""
         s = st.get("session") or {}
         if not s.get("static"):
             return st
@@ -595,13 +595,13 @@ class Engine:
         car = next((c for c in st["cars"] if c["i"] == self.player), None)
         if not r or not car:
             return {**st, "session": session}
-        me = dict(st["me"], i=self.player, cls=car.get("cls", (self.drivers.get(self.player) or {}).get("cls")), p=car.get("p"), cp=car.get("cp"),
+        me = dict(st.get("user") or st["me"], i=self.player, cls=car.get("cls", (self.drivers.get(self.player) or {}).get("cls")), p=car.get("p"), cp=car.get("cp"),
                   lap=r.get("LapsComplete") or st["me"].get("lap"), inc=r.get("Incidents"))
         if (r.get("FastestTime") or 0) > 0:
             me["best"] = r["FastestTime"]
         if (r.get("LastTime") or 0) > 0:
             me["last"] = r["LastTime"]
-        return {**st, "session": session, "me": me, "user": me}
+        return {**st, "session": session, "user": me}   # the reference stays whoever is on camera
 
     def _with_results(self, st):
         """Positions and lap times keep coming in SessionInfo, as each car crosses the line."""
@@ -752,8 +752,8 @@ class Engine:
         # map and footer follow it. Mine in the car, whoever I watch otherwise. me stays the player:
         # fuel, pit, incidents and the lap log only exist for the player's own car
         cam = raw.get("CamCarIdx")
-        # a finished race seen in the replay is the result: nobody on camera is the reference
-        foc = me if static else cam if cam in self.drivers else me
+        # a finished race seen in the replay too: whoever is on camera is the reference, the footer stays mine
+        foc = cam if cam in self.drivers else me
         talk = raw.get("RadioTransmitCarIdx")
 
         present = []

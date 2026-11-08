@@ -27,6 +27,7 @@ PASS_HOLD = 8.0       # s with no more swaps between two cars: then the battle i
 FIGHT_GAP = 5.5       # m between two cars of the same class on the same lap: alongside, a car length
 FIGHT_MIN = 1.0       # s alongside for it to be a fight
 FIGHT_END = 2.0       # s apart: it ended, and whoever is still ahead held the position
+INC_JOIN = 8.0       # s: a second incident this soon after one of mine is the same moment (off track, then loss of control)
 SAME_EVENT = 3.0      # s: same event, same cars, this close in time: seen twice
 SEEK = 5.0            # s skipped between two frames: a jump in the replay, not racing
 PIT_GRACE = 8.0       # just out of the pits: rejoining in front of someone is not a pass
@@ -81,6 +82,20 @@ def note(folder, text):
     except OSError:
         pass
 
+
+
+def mend_incidents(items):
+    """Races saved before INC_JOIN lost the second incident of a moment (a loss of control right after an off
+    track): the next one's total says how many went missing, and they belong to the one before."""
+    last = {}
+    for e in sorted((x for x in items if x.get("k") == "inc" and x.get("total") is not None), key=lambda x: (x["sn"], x["t"])):
+        prev = last.get((e["sn"], e.get("i")))
+        gap = e["total"] - e["n"] - (prev["total"] if prev else 0)
+        if prev and gap > 0:
+            prev.setdefault("n0", prev["n"])
+            prev["n"] += gap
+            prev["total"] += gap
+        last[(e["sn"], e.get("i"))] = e
 
 class EventLog:
     def __init__(self):
@@ -108,6 +123,7 @@ class EventLog:
         self._base = True
         self._f = f
         self._state, self._flags = f.state, f.flags
+        self._last_inc = None
         self._inc = f.inc
         self._best = {i: f.best[i] for i in f.present if f.best[i] > 0}
         self._cbest = {}
@@ -173,6 +189,7 @@ class EventLog:
 
     def _restore(self, items):
         self.items = items[-MAX_EVENTS:]
+        mend_incidents(self.items)
         self.by_id = {e["id"]: e for e in self.items}
         self._next = max(self.by_id, default=-1) + 1
         for e in self.items:
@@ -275,7 +292,18 @@ class EventLog:
                 d = min(d, 1.0 - d)
                 if d < gap:
                     near, gap = i, d
-        self.add(f.t, "inc", i=f.me, n=f.inc - self._inc, total=f.inc, j=near)
+        last = self._last_inc
+        if last and last["sn"] == self.snum and 0 <= f.t - last["t"] <= INC_JOIN:
+            # iRacing turns an off track into a loss of control (1x, then 2x): one moment, one event
+            last.setdefault("n0", last["n"])
+            last["n"] += f.inc - self._inc
+            last["total"] = f.inc
+            if last.get("j") is None:
+                last["j"] = near
+            self.ver += 1
+            self.cleared = True   # sends the list again, with this one changed
+        else:
+            self._last_inc = self.add(f.t, "inc", i=f.me, n=f.inc - self._inc, total=f.inc, j=near)
         self._inc = f.inc
 
     def _car(self, f, i):

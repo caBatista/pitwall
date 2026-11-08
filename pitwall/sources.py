@@ -139,6 +139,11 @@ class IRacingSource:
         if self.ir.is_connected:
             self._cam_keys.tap(name)
 
+    def key(self, vk, down):
+        if self.ir.is_connected:
+            from .camera import forward_key  # noqa: WPS433
+            forward_key(vk, down)
+
     def replay_speed(self, speed, slow):
         if self.ir.is_connected:
             self.ir.replay_set_play_speed(speed, slow)
@@ -410,6 +415,9 @@ class MockSource:
 
     def cam_tap(self, name):
         print(f"[mock] camera key {name}", flush=True)
+
+    def key(self, vk, down):
+        print(f"[mock] key {vk} {'down' if down else 'up'}", flush=True)
 
     def replay_speed(self, speed, slow):
         self.play_speed, self.play_slow = speed, slow

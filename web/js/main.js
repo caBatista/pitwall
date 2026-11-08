@@ -155,6 +155,21 @@ function setZoom(z) {
 }
 const on = new Set(widgets.map(([w]) => w));
 setZoom(Number(params.get('zoom')) || prefs.zoom);
+// Keys pressed with Pitwall's window in front go on to iRacing as well (P for the telemetry, I for the ignition...),
+// down and up, so a held key stays held. Not Pitwall's own (S, + - 0, F5, F11) nor typing in a field.
+const OWN = new Set(['KeyS', 'Equal', 'Minus', 'NumpadAdd', 'NumpadSubtract', 'Digit0', 'Numpad0', 'F5', 'F11']);
+const held = new Set();
+function passOn(e, down) {
+  if (!e.keyCode || e.target.closest?.('input, select, textarea')) return;
+  if (OWN.has(e.code) && !e.ctrlKey && !e.altKey && !e.metaKey && (down || !held.has(e.keyCode))) return;
+  if (down) { if (held.has(e.keyCode)) return; held.add(e.keyCode); } else if (!held.delete(e.keyCode)) return;
+  if (e.key === 'Alt' || e.key === 'F10') e.preventDefault();   // the window's menu would take the next key
+  S.send({ cmd: 'key', vk: e.keyCode, d: down });
+}
+addEventListener('keydown', (e) => passOn(e, true));
+addEventListener('keyup', (e) => passOn(e, false));
+addEventListener('blur', () => { for (const vk of held) S.send({ cmd: 'key', vk, d: false }); held.clear(); });   // nothing stays down
+
 addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.('input')) return;
   // desktop app (pywebview): the native window doesn't reload on its own
@@ -206,7 +221,8 @@ function header() {
   if (!st || !st.session) return;
   const s = st.session;
   const rem = s.timeRemain;
-  el.clk.textContent = rem != null && rem <= 0 ? 'OVER' : clock(rem != null ? rem : st.t);
+  const finishing = s.isRace && s.state === 5;   // the flag is out, the others are still coming to the line
+  el.clk.textContent = finishing ? 'FINISHING' : rem != null && rem <= 0 ? 'OVER' : clock(rem != null ? rem : st.t);
   const lap = (st.user ?? st.me).lap;   // the user's, whoever is on camera
   const laps = s.lapsTotal && lap != null ? `Lap ${lap}/${s.lapsTotal}` : lap != null ? `Lap ${lap}` : '';
   el.clkSub.textContent = [s.name || s.type, rem != null ? 'Remaining' : 'Elapsed', laps].filter(Boolean).join(' · ');
@@ -256,6 +272,7 @@ function connect() {
         slow = 0; invalidate(); break;
       case 'track': S.track = m.points ? m : null; if (!m.points && S.st) S.track = null; invalidate(); break;
       case 'wx': S.wxHist = m.hist || []; invalidate(); break;
+      case 'laps': S.evLaps = m.laps || {}; S.eventsVer++; invalidate(); break;
       case 'events':
         S.events = m.all || [...S.events, ...m.add].slice(-6000);
         S.eventsVer++; slow = 0; invalidate(); break;

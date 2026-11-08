@@ -227,14 +227,15 @@ def test_opening_the_tool_hides_the_panels_and_the_hide_icon_brings_them_back(en
     assert src.calls == [("state", 0x34)]
 
 
-def test_a_finished_race_in_the_replay_shows_the_end_on_my_car_not_the_one_on_camera(engine):
+def test_a_finished_race_in_the_replay_has_my_end_in_the_footer_and_the_car_on_camera_as_reference(engine):
     info = session([0, 1], results=[{"CarIdx": 0, "Position": 2, "ClassPosition": 1, "FastestTime": 99.5, "LastTime": 100.5, "LapsComplete": 9, "Incidents": 6},
                                     {"CarIdx": 1, "Position": 1, "ClassPosition": 0, "FastestTime": 98.0, "LastTime": 99.0, "LapsComplete": 9}])
     info["SessionInfo"]["Sessions"][0]["ResultsOfficial"] = 1
     engine.set_session(info)
     st = engine.update(frame({0: (4, .5), 1: (4, .4)}, SessionTime=500.0, SessionTimeRemain=900.0, IsOnTrack=False, CamCarIdx=1, IsReplayPlaying=True, ReplayFrameNumEnd=6000))
     assert st["session"]["static"] and st["session"]["timeRemain"] == 0
-    assert (st["me"]["i"], st["me"]["p"], st["me"]["lap"], st["me"]["best"], st["me"]["inc"]) == (0, 2, 9, 99.5, 6)
+    assert (st["user"]["i"], st["user"]["p"], st["user"]["lap"], st["user"]["best"], st["user"]["inc"]) == (0, 2, 9, 99.5, 6)
+    assert st["me"]["i"] == 1
     assert st["cam"]["i"] == 1
 
 
