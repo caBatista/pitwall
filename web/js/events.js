@@ -99,12 +99,14 @@ export const events = {
   /** Every lap of the driver, from when each began (the start of the next one gives its time): a row each. */
   laps(C, ref) {
     if (prefs.evOff.includes('laps')) return [];
-    const out = [];
+    const out = [], kinds = {};
+    for (const e of C.events) kinds[e.sn] ??= e.sk;   // the session break needs its type: the events of that session have it
+    if (C.st?.session) kinds[C.st.session.num] ??= C.st.session.kind;
     for (const [sn, cars] of Object.entries(C.evLaps || {})) {
       const starts = Object.entries(cars?.[ref] || {}).map(([n, t]) => [Number(n), t]).sort((a, b) => a[0] - b[0]);
       starts.forEach(([n, t], k) => {
         const next = starts[k + 1];
-        out.push({ id: `L${sn}-${n}`, k: 'lapx', sn: Number(sn), t, i: ref, cl: n, d: next && next[0] === n + 1 ? next[1] - t : null });
+        out.push({ id: `L${sn}-${n}`, k: 'lapx', sn: Number(sn), sk: kinds[sn], t, i: ref, cl: n, d: next && next[0] === n + 1 ? next[1] - t : null });
       });
     }
     return out;
