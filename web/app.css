@@ -259,8 +259,8 @@ svg.tyre.wet { color: var(--blue); }
 .tyre-t { font: 600 10px var(--mono); letter-spacing: .04em; color: var(--txt); }
 .tyre-t.wet { color: var(--blue); }
 .rrow .rt { text-align: right; font: 600 14px var(--num); font-variant-numeric: tabular-nums; }
-.rrow .rname { display: flex; align-items: center; gap: 6px; min-width: 0; font: 600 13px var(--num); }
-.rrow .rname .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 4em; }
+.rrow .rname { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; font: 600 13px var(--num); }
+.rrow .rname .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 2em; }
 .rrow .rname .tag { flex-shrink: 0; }
 .tag.out { background: transparent; border-color: var(--accent); color: var(--accent); border-radius: 3px; }   /* PIT inverted */
 /* last pit stop: amber "L12" + outlined time on pit road (blinks while in the pits) */
@@ -654,3 +654,6 @@ body[data-out] .lrow[data-lap]:hover { background: rgba(255, 255, 255, .06); }
 .switch.tyres span { display: inline-flex; align-items: center; gap: 5px; }
 .switch.tyres svg { width: 12px; height: 12px; }
 .switch.tyres:has(input:checked) span { color: var(--accent); }
+/* the last 10 s to get in the car before the grid closes */
+.clock.grid-warn .clock-main { color: var(--red); animation: gridwarn .5s steps(1) infinite alternate; }
+@keyframes gridwarn { 50% { opacity: .25; } }

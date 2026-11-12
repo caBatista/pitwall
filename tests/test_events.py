@@ -572,3 +572,12 @@ def test_a_race_saved_before_the_join_gets_its_lost_incident_back():
              {"k": "inc", "sn": 2, "t": 2049.1, "i": 0, "n": 1, "total": 6}]
     mend_incidents(items)
     assert [(e.get("n0"), e["n"], e["total"]) for e in items] == [(None, 1, 3), (1, 2, 5), (None, 1, 6)]
+
+
+def test_in_qualifying_whoever_is_done_has_the_flag(engine):
+    from conftest import frame, session
+    engine.set_session(session(kind="Lone Qualify"))
+    flags = [0] * 64
+    flags[1] = 0x1
+    cars = {c["i"]: c for c in engine.update(frame({0: (3, .5), 1: (3, .4)}, best={0: 99.0, 1: 98.0}, CarIdxSessionFlags=flags))["cars"]}
+    assert cars[1]["fin"] and not cars[0]["fin"]

@@ -16,7 +16,8 @@ import argparse
 import asyncio
 import ctypes
 import json
-import os
+import os
+import time
 import sys
 import socket
 import threading
@@ -192,7 +193,28 @@ def server_cmd(args, port) -> list[str]:
     return cmd
 
 
+LOG_MAX = 1_000_000   # bytes: started again past this
+
+
+def log_to_file():
+    """No console without one (pythonw, the EXE): errors of the server, the full-screen watcher... land in
+    pitwall.log next to the settings, or nowhere."""
+    if sys.stdout is not None and not FROZEN:
+        return
+    try:
+        path = DATA / "pitwall.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists() and path.stat().st_size > LOG_MAX:
+            path.unlink()
+        fh = open(path, "a", encoding="utf-8", buffering=1)   # noqa: SIM115 - open for the life of the app
+        fh.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} started\n")
+        sys.stdout = sys.stderr = fh
+    except OSError:
+        pass
+
+
 def main():
+    log_to_file()
     p = argparse.ArgumentParser(prog="pitwall-desktop", description="Pitwall desktop app")
     p.add_argument("--mock", action="store_true", help="run on the simulator (no iRacing needed)")
     p.add_argument("--speed", type=float, default=4.0, help=argparse.SUPPRESS)

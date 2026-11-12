@@ -8,6 +8,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 from aiohttp import WSMsgType, web
 
@@ -42,6 +43,17 @@ def dumps_clean(obj) -> str:
         return dumps(obj)
     except ValueError:
         return dumps(_clean(obj))
+
+
+@web.middleware
+async def same_origin(request, handler):
+    """Only Pitwall's own pages: a web page open in the browser could otherwise reach this port and type in the
+    sim, write in the chat or change the pit menu. A browser always says where a request comes from (Origin);
+    programs without one (tools, tests) are let through."""
+    origin = request.headers.get("Origin")
+    if origin and urlparse(origin).netloc != request.host:
+        raise web.HTTPForbidden(text="not from Pitwall")
+    return await handler(request)
 
 
 @web.middleware
@@ -392,7 +404,7 @@ class App:
 
     # ---- http --------------------------------------------------------------
     def build(self) -> web.Application:
-        app = web.Application(middlewares=[no_cache])
+        app = web.Application(middlewares=[same_origin, no_cache])
 
         async def index(_):
             return web.FileResponse(WEB_DIR / "index.html")

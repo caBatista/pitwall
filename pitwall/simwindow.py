@@ -87,24 +87,35 @@ class Watch:
 
 
 def watch():
-    """Runs for as long as the app does. Pitwall keeps working if this can't."""
-    try:
-        u, _ = _api()
-        w = Watch(u.GetForegroundWindow, is_sim, is_windowed, press_alt_enter)
-        was = False
-        while True:
-            time.sleep(POLL)
-            if enabled and only_car and in_car and not was:
-                # into the car by a key, with the focus anywhere (the board, the desktop): the sim is brought to
-                # the front itself, then full screen
-                hwnd = sim_window()
-                if hwnd and is_windowed(hwnd) and focus_sim():
-                    time.sleep(SETTLE)
-                    if u.GetForegroundWindow() == hwnd and is_windowed(hwnd):
-                        press_alt_enter()
-                w.last = u.GetForegroundWindow()
-            elif enabled and (in_car or not only_car):
-                w.step()
-            was = in_car
-    except Exception as e:  # noqa: BLE001
-        print(f"[simwindow] stopped: {e!r}", flush=True)
+    """Runs for as long as the app does. Pitwall keeps working if this can't; an error is told once and the
+    watching goes on (it used to stop for good until the app was opened again)."""
+    told = False
+    while True:
+        try:
+            _watch()
+        except Exception as e:  # noqa: BLE001
+            if not told:
+                print(f"[simwindow] error, carrying on: {e!r}", flush=True)
+                told = True
+            time.sleep(5)
+
+
+def _watch():
+    """One run of the watching, until an error."""
+    u, _ = _api()
+    w = Watch(u.GetForegroundWindow, is_sim, is_windowed, press_alt_enter)
+    was = False
+    while True:
+        time.sleep(POLL)
+        if enabled and only_car and in_car and not was:
+            # into the car by a key, with the focus anywhere (the board, the desktop): the sim is brought to
+            # the front itself, then full screen
+            hwnd = sim_window()
+            if hwnd and is_windowed(hwnd) and focus_sim():
+                time.sleep(SETTLE)
+                if u.GetForegroundWindow() == hwnd and is_windowed(hwnd):
+                    press_alt_enter()
+            w.last = u.GetForegroundWindow()
+        elif enabled and (in_car or not only_car):
+            w.step()
+        was = in_car

@@ -582,7 +582,8 @@ class Engine:
             session["static"] = seen["session"].get("static")
         if session.get("timeRemain") is not None:
             session["timeRemain"] = max(0.0, session["timeRemain"] - (time.monotonic() - self._live_at))
-        return self._with_results({**live, "session": session, "cam": self._cam(raw)})
+        me = seen.get("me") if seen.get("me", {}).get("i") is not None else live["me"]
+        return self._with_results({**live, "session": session, "cam": self._cam(raw), "me": me})
 
     def _finished(self, st):
         """The result of a finished race, whatever moment the replay is on: no time left, and the footer is the
@@ -946,7 +947,8 @@ class Engine:
                     "pip": self._pits[i][2] is None} if i in self._pits else {}),
                 "cb": bool(best[i] > 0 and class_best.get(cid) == best[i]),
                 "pb": bool(best[i] > 0 and last[i] > 0 and abs(last[i] - best[i]) < 1e-4),
-                "fin": i in self._fin,   # took the checkered flag
+                # took the checkered flag; in qualifying, done with the run (iRacing's per-car bit, or the session ended)
+                "fin": i in self._fin or (kind == "qualify" and bool(int(cflags[i] or 0) & 0x1 or (state >= 5 and res.get(i)))),
             }
             h = self._laps.get(i)
             if h and h[0][1] and not pre_green:   # latest lap invalid: our own time, marked
@@ -1012,6 +1014,13 @@ class Engine:
                 self._mylaps.appendleft(pend)
                 self._pending_lap = None
             self._my_last = mylast
+        pend = getattr(self, "_pending_lap", None)
+        mine_h = self._laps.get(me)
+        if pend and pend.get("end") is not None and t - pend["end"] > 4 and mine_h and mine_h[0][1]:
+            pend["time"], pend["inv"] = round(mine_h[0][0], 3), True
+            pend["t0"] = round(pend.pop("end") - pend["time"], 2)
+            self._mylaps.appendleft(pend)
+            self._pending_lap = None
 
         # relative: everyone physically near the focused car, by iRacing's estimate, as its own Relative:
         # the elapsed time carries how slowly I came here (3 s more on an out lap)
@@ -1149,6 +1158,8 @@ class Engine:
         tr = time_rem if time_rem < UNLIMITED_TIME else None
         if kind == "race" and true_state >= 5:   # the flag is out: iRacing's clock goes on for the cool down
             tr = 0.0
+        elif kind == "race" and true_state == 1 and tr is not None and 0 < tr < UNLIMITED_TIME:
+            pass   # get in the car: iRacing counts down to the grid closing
         elif kind == "race" and (true_state < 4 or (tr is not None and tr < 0)):   # before the green, and -1 on its first frame
             length = re.match(r"[\d.]+", str(sess.get("SessionTime") or ""))
             tr = float(length.group()) if length else time_total if 0 < time_total < UNLIMITED_TIME else tr
@@ -1207,7 +1218,7 @@ class Engine:
                 "type": stype or "Session", "name": sess.get("SessionName") or stype,
                 "isRace": is_race, "kind": kind, "state": int(raw.get("SessionState") or 0), "over": over, "static": static,
                 "stateName": SESSION_STATE.get(int(raw.get("SessionState") or 0), ""),
-                "flag": flag, "timeRemain": tr,
+                "flag": flag, "timeRemain": tr, "grid": kind == "race" and true_state == 1,
                 "rflag": race_flag(raw.get("SessionFlags"), cflags[me] if me < len(cflags) else 0) if raw.get("IsOnTrack") else None,
                 "timeTotal": time_total if time_total < UNLIMITED_TIME else None,
                 "lapsRemain": laps_rem if laps_rem < UNLIMITED_LAPS else None,

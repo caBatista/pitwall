@@ -73,7 +73,7 @@ const CELL = {
   d3: (c, x) => delta(c, 2, x),
   d4: (c, x) => delta(c, 3, x),
   d5: (c, x) => delta(c, 4, x),
-  status: (c, x) => (x.over ? ['sflag', c.fin && !x.o.off.has('fin') ? ST.fin : '']
+  status: (c, x) => (x.over || (x.kind === 'qualify' && c.fin) ? ['sflag', c.fin && !x.o.off.has('fin') ? ST.fin : '']
     : ['sflag', `${talkHtml(x.talk === c.i)}<span class="fxw" style="${flagFx('s' + c.i, c.fl)}">${statusHtml(c, x.o.off)}</span>`]),
 };
 const noTime = (dec) => `-:--${dec ? '.' + '-'.repeat(dec) : ''}`;
@@ -275,10 +275,11 @@ export const standings = {
       const inc = m.inc ?? null;
       let pen = m.incPen;
       if (pen && inc != null && inc >= pen && m.incPenNext) pen += Math.ceil((inc - pen + 1) / m.incPenNext) * m.incPenNext;
-      const limits = [pen, m.incDq].filter((x) => x && inc != null && x > inc);
+      const race = st.session.isRace;   // the limits only exist in a race
+      const limits = race ? [pen, m.incDq].filter((x) => x && inc != null && x > inc) : [];
       const toGo = limits.length ? Math.min(...limits) - inc : null;
       const incCls = toGo == null ? '' : toGo <= 4 ? 'neg' : toGo <= 8 ? 'warn' : toGo <= 12 ? '' : 'pos';
-      const incMax = [pen, m.incDq].filter((x) => x != null).map((x) => `/${x}x`).join('');   // the limits, smaller and never coloured
+      const incMax = !race ? '' : [pen, m.incDq].filter((x) => x != null).map((x) => `/${x}x`).join('');   // the limits, smaller and never coloured
       const g = m.irGain, cf = prefs.standFoot, fo = (k, n) => optOf(cf, FOOT, k, n);
       const kv = (k, title, html) => `<div class="kv k-${k}"><small>${title}</small><b>${html}</b></div>`;
       const ITEM = {

@@ -1,4 +1,4 @@
-import { lapTime, fmt } from './util.js';
+import { lapTime, fmt, INV } from './util.js';
 
 /**
  * Laptime log (test sessions, in place of the standings): my laps, newest first,
@@ -27,7 +27,7 @@ export const laplog = {
     const st = S.st;
     if (!st || st.session.kind !== 'test') return;
     const laps = st.me.laps || [];
-    const best = laps.reduce((m, l) => (l.time && (!m || l.time < m) ? l.time : m), null);
+    const best = laps.reduce((m, l) => (l.time && !l.inv && (!m || l.time < m) ? l.time : m), null);   // an invalid lap is never the best
     this.pb.textContent = best ? lapTime(best) : '-:--.---';
     this.tt.textContent = st.wx.track != null ? `Track ${fmt.temp(st.wx.track).toFixed(1)}${fmt.tempU()}` : '';
 
@@ -41,7 +41,7 @@ export const laplog = {
       const pb = l.time && best ? l.time - best : null;
       return `<div class="rrow lrow ${l.time === best ? 'pbrow' : ''}" ${l.t0 != null ? `data-lap="${l.t0}" data-sn="${l.sn}"` : ''}>
         <div class="rpos">${l.lap}</div>
-        <div class="t ${l.time === best ? 'cb' : ''}">${l.time ? lapTime(l.time) : '-:--.---'}</div>
+        <div class="t ${l.time === best ? 'cb' : ''}">${l.time ? lapTime(l.time) + (l.inv ? INV : '') : '-:--.---'}</div>
         <div class="dl ${cls(d)}">${sgn(d)}</div>
         <div class="dl ${pb > 0 ? 'bad' : ''}">${l.time === best ? '–' : sgn(pb)}</div>
         <div class="t">${l.temp == null ? '–' : fmt.temp(l.temp).toFixed(1) + fmt.tempU()}</div>
